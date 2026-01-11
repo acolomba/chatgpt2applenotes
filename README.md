@@ -1,2 +1,3 @@
-# chatgpt2applenotes
-Syncs ChatGPT OpenAPI conversation exports to Apple Notes
+# ChatGPT to Apple Notes
+
+Synchronizes ChatGPT OpenAPI conversation exports to Apple Notes.
