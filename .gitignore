@@ -23,3 +23,7 @@ __pycache__
 
 # worktrees
 .worktrees
+
+# output
+/output/*
+!/output/.gitkeep
