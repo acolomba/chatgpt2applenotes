@@ -22,7 +22,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-dependencies = []
+dependencies = [
+    "markdown-it-py~=3.0",
+]
 
 [project.scripts]
 chatgpt2applenotes = "chatgpt2applenotes:main"
@@ -91,7 +93,7 @@ exclude = ["venv/", "build/", "dist/"]
 
 # ignores third-party packages without type stubs
 [[tool.mypy.overrides]]
-module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest"]
+module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest", "markdown_it"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
