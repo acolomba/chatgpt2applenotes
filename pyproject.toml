@@ -141,3 +141,9 @@ disable = [
 
 [tool.pylint.format]
 max-line-length = 88  # for consistency with black/ruff
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
+]
