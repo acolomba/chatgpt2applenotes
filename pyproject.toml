@@ -91,11 +91,15 @@ exclude = ["venv/", "build/", "dist/"]
 
 # ignores third-party packages without type stubs
 [[tool.mypy.overrides]]
-module = ["requests", "hamcrest", "testcontainers.*", "tzlocal"]
+module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "chatgpt2applenotes_test"
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = "tests.*"
 disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
@@ -133,6 +137,9 @@ omit = [
 
 [tool.coverage.html]
 directory = "coverage_report"
+
+[tool.pylint.main]
+extension-pkg-allow-list = ["pytest"]
 
 [tool.pylint.messages_control]
 disable = [

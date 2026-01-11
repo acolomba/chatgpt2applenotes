@@ -49,6 +49,11 @@ def _extract_messages(mapping: dict[str, Any]) -> list[Message]:
         if not content:
             continue
 
+        # Skip messages without valid timestamp (must be positive)
+        create_time = message_data.get("create_time")
+        if not create_time or create_time <= 0:
+            continue
+
         author_data = message_data.get("author", {})
         author = Author(
             role=author_data.get("role", "unknown"),
@@ -59,7 +64,7 @@ def _extract_messages(mapping: dict[str, Any]) -> list[Message]:
         message = Message(
             id=message_data.get("id", node_id),
             author=author,
-            create_time=message_data.get("create_time", 0.0),
+            create_time=create_time,
             content=content,
             metadata=message_data.get("metadata", {}),
         )
