@@ -1,6 +1,6 @@
 """Data models for ChatGPT conversations (ported from TypeScript)."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 
@@ -10,7 +10,11 @@ class Author:
 
     role: str  # "user", "assistant", "system"
     name: Optional[str] = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Optional[dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        if self.metadata is None:
+            self.metadata = {}
 
 
 @dataclass
@@ -29,7 +33,11 @@ class Message:
     author: Author
     create_time: float
     content: dict[str, Any]  # Flexible for various content types
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Optional[dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        if self.metadata is None:
+            self.metadata = {}
 
 
 @dataclass
@@ -41,4 +49,8 @@ class Conversation:
     create_time: float
     update_time: float
     messages: list[Message]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Optional[dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        if self.metadata is None:
+            self.metadata = {}
