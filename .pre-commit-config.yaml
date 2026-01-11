@@ -73,7 +73,7 @@ repos:
     rev: v3.3.9
     hooks:
       - id: pylint
-        additional_dependencies: [pytest]
+        additional_dependencies: [pytest, markdown-it-py]
 
   - repo: https://github.com/sirosen/texthooks
     rev: 0.7.1
