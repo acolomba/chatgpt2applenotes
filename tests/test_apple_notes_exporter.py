@@ -311,5 +311,9 @@ def test_renders_lists(tmp_path: Path) -> None:
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "<ul>" in html
     assert "<li>Item 1</li>" in html
+    assert "<li>Item 2</li>" in html
+    assert "</ul>" in html
     assert "<ol>" in html
     assert "<li>First</li>" in html
+    assert "<li>Second</li>" in html
+    assert "</ol>" in html
