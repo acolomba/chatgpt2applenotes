@@ -117,6 +117,13 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         """
         Converts markdown to Apple Notes HTML format.
 
+        Transforms markdown-it-py output to Apple Notes-compatible tags:
+        - Code blocks: <pre><code> → <div><tt>
+        - Paragraphs: <p> → <div>
+        - Bold: <strong> → <b>
+        - Italic: <em> → <i>
+        - Inline code: <code> → <tt>
+
         Args:
             markdown: markdown text
 
@@ -132,7 +139,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         # converts markdown-it-py output to Apple Notes format
         # IMPORTANT: Process code blocks BEFORE inline code
         # handles language-specific code blocks
-        html = re.sub(r'<pre><code class="language-\w+">', "<div><tt>", html)
+        html = re.sub(r'<pre><code class="language-[^"]+">', "<div><tt>", html)
         # <pre><code> -> <div><tt>
         html = html.replace("<pre><code>", "<div><tt>")
         html = html.replace("</code></pre>", "</tt></div>")

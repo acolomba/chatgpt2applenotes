@@ -245,5 +245,40 @@ def test_renders_code_blocks(tmp_path: Path) -> None:
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<tt>" in html
+    assert "<div><tt>" in html
     assert "print('hello')" in html
+    assert "</tt></div>" in html
+    assert "<pre>" not in html
+    assert '<code class="language' not in html
+
+
+def test_renders_code_blocks_with_special_chars_in_language(tmp_path: Path) -> None:
+    """Code blocks with special chars in language (c++, c#) render correctly."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["```c++\nint main() {}\n```"],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<div><tt>" in html
+    assert "int main() {}" in html
+    assert "</tt></div>" in html
+    assert "<pre>" not in html
+    assert '<code class="language' not in html
