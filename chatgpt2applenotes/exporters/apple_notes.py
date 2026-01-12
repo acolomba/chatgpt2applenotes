@@ -4,7 +4,7 @@ import html as html_lib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from markdown_it import MarkdownIt
 
@@ -152,6 +152,33 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         # <code> -> <tt> (inline code)
         return html.replace("<code>", "<tt>").replace("</code>", "</tt>")
 
+    def _render_multimodal_content(self, content: dict[str, Any]) -> str:
+        """
+        Renders multimodal content (text + images).
+
+        Args:
+            content: message content dict
+
+        Returns:
+            HTML string with text and image placeholders
+        """
+        parts = content.get("parts") or []
+        html_parts = []
+
+        for part in parts:
+            if isinstance(part, str):
+                # text part - renders as markdown
+                html_parts.append(self._markdown_to_apple_notes(part))
+            elif isinstance(part, dict):
+                # image part - placeholder for now
+                asset_pointer = part.get("asset_pointer", "unknown")
+                html_parts.append(
+                    f"<div>[Image: {html_lib.escape(asset_pointer)}]</div>"
+                )
+                html_parts.append("<div><br></div>")
+
+        return "".join(html_parts)
+
     def _render_message_content(self, message: Message) -> str:
         """
         Renders message content to Apple Notes HTML.
@@ -168,6 +195,9 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             parts = message.content.get("parts") or []
             text = " ".join(str(p) for p in parts if p)
             return self._markdown_to_apple_notes(text)
+
+        if content_type == "multimodal_text":
+            return self._render_multimodal_content(message.content)
 
         # other content types - placeholder
         return "[Unsupported content type]"

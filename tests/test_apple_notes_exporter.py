@@ -317,3 +317,47 @@ def test_renders_lists(tmp_path: Path) -> None:
     assert "<li>First</li>" in html
     assert "<li>Second</li>" in html
     assert "</ol>" in html
+
+
+def test_renders_multimodal_content_with_images(tmp_path: Path) -> None:
+    """Multimodal content renders text and image parts."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "multimodal_text",
+                    "parts": [
+                        "Here is an image:",
+                        {
+                            "asset_pointer": "file-service://file-123",
+                            "metadata": {
+                                "dalle": {
+                                    "prompt": "test image",
+                                    "seed": 12345,
+                                }
+                            },
+                            "size_bytes": 1000,
+                            "width": 100,
+                            "height": 100,
+                        },
+                    ],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "Here is an image:" in html
+    # for now, placeholder for image
+    assert "[Image: file-service://file-123]" in html or "[Image" in html
