@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+from markdown_it import MarkdownIt
+
 from chatgpt2applenotes.core.models import Conversation, Message
 from chatgpt2applenotes.exporters.base import Exporter
 
@@ -111,6 +113,38 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             return f"<html><body>{body}</body></html>"
         return body
 
+    def _markdown_to_apple_notes(self, markdown: str) -> str:
+        """
+        Converts markdown to Apple Notes HTML format.
+
+        Args:
+            markdown: markdown text
+
+        Returns:
+            Apple Notes-compatible HTML
+        """
+        md = MarkdownIt()
+        # disables HTML to prevent injection attacks
+        md.disable("html_inline")
+        md.disable("html_block")
+        html: str = md.render(markdown).rstrip("\n")
+
+        # converts markdown-it-py output to Apple Notes format
+        # <p>text</p> -> <div>text</div>
+        # <strong> -> <b>
+        # <em> -> <i>
+        # <code> -> <tt>
+        return (
+            html.replace("<p>", "<div>")
+            .replace("</p>", "</div>")
+            .replace("<strong>", "<b>")
+            .replace("</strong>", "</b>")
+            .replace("<em>", "<i>")
+            .replace("</em>", "</i>")
+            .replace("<code>", "<tt>")
+            .replace("</code>", "</tt>")
+        )
+
     def _render_message_content(self, message: Message) -> str:
         """
         Renders message content to Apple Notes HTML.
@@ -126,7 +160,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         if content_type == "text":
             parts = message.content.get("parts") or []
             text = " ".join(str(p) for p in parts if p)
-            return html_lib.escape(text)
+            return self._markdown_to_apple_notes(text)
 
         # other content types - placeholder
         return "[Unsupported content type]"

@@ -188,3 +188,33 @@ def test_renders_messages_with_author_and_content(tmp_path: Path) -> None:
     assert "<h2>Assistant</h2>" in html
     assert "First message" in html
     assert "Second message" in html
+
+
+def test_renders_markdown_in_messages(tmp_path: Path) -> None:
+    """Markdown in message content is rendered to Apple Notes HTML."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["**bold** and *italic* and `code`"],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<b>bold</b>" in html
+    assert "<i>italic</i>" in html
+    assert "<tt>code</tt>" in html
