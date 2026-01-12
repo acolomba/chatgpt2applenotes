@@ -282,3 +282,34 @@ def test_renders_code_blocks_with_special_chars_in_language(tmp_path: Path) -> N
     assert "</tt></div>" in html
     assert "<pre>" not in html
     assert '<code class="language' not in html
+
+
+def test_renders_lists(tmp_path: Path) -> None:
+    """Lists are rendered as ul/ol with li items."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["- Item 1\n- Item 2\n\n1. First\n2. Second"],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<ul>" in html
+    assert "<li>Item 1</li>" in html
+    assert "<ol>" in html
+    assert "<li>First</li>" in html
