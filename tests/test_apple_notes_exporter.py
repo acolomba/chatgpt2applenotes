@@ -128,3 +128,29 @@ def test_export_escapes_html_in_content(tmp_path: Path) -> None:
 
     # message content should be escaped
     assert "&lt;b&gt;test&lt;/b&gt; &amp; &lt;i&gt;more&lt;/i&gt;" in html
+
+
+def test_metadata_includes_conversation_id_and_timestamp(tmp_path: Path) -> None:
+    """Conversation metadata includes ID and timestamp."""
+    conversation = Conversation(
+        id="conv-abc123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1736629800.0,  # 2026-01-11 15:30 UTC
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["Hi"]},
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "conv-abc123" in html
+    assert "Updated:" in html

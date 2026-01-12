@@ -2,6 +2,7 @@
 
 import html as html_lib
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -72,21 +73,35 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         Returns:
             HTML string
         """
-        # basic structure for now
-        body_parts = [f"<div><h1>{html_lib.escape(conversation.title)}</h1></div>"]
+        parts = []
+
+        # conversation title
+        parts.append(f"<div><h1>{html_lib.escape(conversation.title)}</h1></div>")
+
+        # conversation metadata
+        update_time = datetime.fromtimestamp(
+            conversation.update_time, tz=timezone.utc
+        ).strftime("%Y-%m-%d %H:%M")
+        metadata = f"{conversation.id} | Updated: {update_time}"
+        parts.append(
+            f'<div style="font-size: x-small; color: gray;">{html_lib.escape(metadata)}</div>'
+        )
+        parts.append("<div><br></div>")
 
         # adds messages
         for message in conversation.messages:
             if message.content and message.content.get("content_type") == "text":
-                parts = message.content.get("parts") or []
+                message_parts = message.content.get("parts") or []
                 text_parts = [
-                    html_lib.escape(str(p)) for p in parts if isinstance(p, str) and p
+                    html_lib.escape(str(p))
+                    for p in message_parts
+                    if isinstance(p, str) and p
                 ]
                 text = " ".join(text_parts)
                 if text:
-                    body_parts.append(f"<div>{text}</div>")
+                    parts.append(f"<div>{text}</div>")
 
-        body = "".join(body_parts)
+        body = "".join(parts)
 
         # wraps in html/body tags for file target
         if self.target == "file":
