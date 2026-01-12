@@ -1,8 +1,12 @@
 """Tests for Apple Notes exporter."""
 
+import json
 from pathlib import Path
 
+import pytest
+
 from chatgpt2applenotes.core.models import Author, Conversation, Message
+from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
 
 
@@ -361,3 +365,36 @@ def test_renders_multimodal_content_with_images(tmp_path: Path) -> None:
     assert "Here is an image:" in html
     # for now, placeholder for image
     assert "[Image: file-service://file-123]" in html or "[Image" in html
+
+
+@pytest.mark.skipif(
+    not Path(
+        "/Users/acolomba/Downloads/chatgpt-export-json/ChatGPT-Freezing_Rye_Bread.json"
+    ).exists(),
+    reason="Real conversation test file not available",
+)
+def test_export_real_conversation(tmp_path: Path) -> None:
+    """Exports real ChatGPT conversation to Apple Notes HTML."""
+    json_path = Path(
+        "/Users/acolomba/Downloads/chatgpt-export-json/ChatGPT-Freezing_Rye_Bread.json"
+    )
+
+    with open(json_path, encoding="utf-8") as f:
+        json_data = json.load(f)
+
+    conversation = process_conversation(json_data)
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    output_file = output_dir / "Freezing_Rye_Bread.html"
+    assert output_file.exists()
+
+    html = output_file.read_text(encoding="utf-8")
+    assert "<html>" in html
+    assert "<body>" in html
+    assert conversation.title in html
+    assert conversation.id in html
+    # has messages
+    assert "<h2>" in html
