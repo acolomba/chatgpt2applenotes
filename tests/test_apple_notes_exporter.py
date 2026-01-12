@@ -1,6 +1,7 @@
 """Tests for Apple Notes exporter."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,11 @@ import pytest
 from chatgpt2applenotes.core.models import Author, Conversation, Message
 from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
+
+TEST_DATA_DIR = os.getenv(
+    "CHATGPT_TEST_DATA_DIR",
+    "/Users/acolomba/Downloads/chatgpt-export-json",
+)
 
 
 def test_export_to_file_creates_html(tmp_path: Path) -> None:
@@ -368,16 +374,12 @@ def test_renders_multimodal_content_with_images(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    not Path(
-        "/Users/acolomba/Downloads/chatgpt-export-json/ChatGPT-Freezing_Rye_Bread.json"
-    ).exists(),
+    not (Path(TEST_DATA_DIR) / "ChatGPT-Freezing_Rye_Bread.json").exists(),
     reason="Real conversation test file not available",
 )
 def test_export_real_conversation(tmp_path: Path) -> None:
     """Exports real ChatGPT conversation to Apple Notes HTML."""
-    json_path = Path(
-        "/Users/acolomba/Downloads/chatgpt-export-json/ChatGPT-Freezing_Rye_Bread.json"
-    )
+    json_path = Path(TEST_DATA_DIR) / "ChatGPT-Freezing_Rye_Bread.json"
 
     with open(json_path, encoding="utf-8") as f:
         json_data = json.load(f)
@@ -388,7 +390,10 @@ def test_export_real_conversation(tmp_path: Path) -> None:
     output_dir = tmp_path / "notes"
     exporter.export(conversation, str(output_dir))
 
-    output_file = output_dir / "Freezing_Rye_Bread.html"
+    # finds the generated HTML file
+    html_files = list(output_dir.glob("*.html"))
+    assert len(html_files) == 1, f"Expected 1 HTML file, found {len(html_files)}"
+    output_file = html_files[0]
     assert output_file.exists()
 
     html = output_file.read_text(encoding="utf-8")
@@ -397,4 +402,5 @@ def test_export_real_conversation(tmp_path: Path) -> None:
     assert conversation.title in html
     assert conversation.id in html
     # has messages
-    assert "<h2>" in html
+    assert len(conversation.messages) > 0
+    assert "<h2>User</h2>" in html or "<h2>Assistant</h2>" in html
