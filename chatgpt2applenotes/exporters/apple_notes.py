@@ -130,20 +130,20 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         html: str = md.render(markdown).rstrip("\n")
 
         # converts markdown-it-py output to Apple Notes format
+        # IMPORTANT: Process code blocks BEFORE inline code
+        # handles language-specific code blocks
+        html = re.sub(r'<pre><code class="language-\w+">', "<div><tt>", html)
+        # <pre><code> -> <div><tt>
+        html = html.replace("<pre><code>", "<div><tt>")
+        html = html.replace("</code></pre>", "</tt></div>")
         # <p>text</p> -> <div>text</div>
+        html = html.replace("<p>", "<div>").replace("</p>", "</div>")
         # <strong> -> <b>
+        html = html.replace("<strong>", "<b>").replace("</strong>", "</b>")
         # <em> -> <i>
-        # <code> -> <tt>
-        return (
-            html.replace("<p>", "<div>")
-            .replace("</p>", "</div>")
-            .replace("<strong>", "<b>")
-            .replace("</strong>", "</b>")
-            .replace("<em>", "<i>")
-            .replace("</em>", "</i>")
-            .replace("<code>", "<tt>")
-            .replace("</code>", "</tt>")
-        )
+        html = html.replace("<em>", "<i>").replace("</em>", "</i>")
+        # <code> -> <tt> (inline code)
+        return html.replace("<code>", "<tt>").replace("</code>", "</tt>")
 
     def _render_message_content(self, message: Message) -> str:
         """

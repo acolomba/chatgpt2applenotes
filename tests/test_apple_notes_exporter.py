@@ -218,3 +218,32 @@ def test_renders_markdown_in_messages(tmp_path: Path) -> None:
     assert "<b>bold</b>" in html
     assert "<i>italic</i>" in html
     assert "<tt>code</tt>" in html
+
+
+def test_renders_code_blocks(tmp_path: Path) -> None:
+    """Code blocks are rendered with tt tags."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["```python\nprint('hello')\n```"],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<tt>" in html
+    assert "print('hello')" in html
