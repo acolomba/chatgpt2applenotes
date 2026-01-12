@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from chatgpt2applenotes.core.models import Conversation
+from chatgpt2applenotes.core.models import Conversation, Message
 from chatgpt2applenotes.exporters.base import Exporter
 
 
@@ -88,18 +88,21 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         )
         parts.append("<div><br></div>")
 
-        # adds messages
+        # renders messages
         for message in conversation.messages:
-            if message.content and message.content.get("content_type") == "text":
-                message_parts = message.content.get("parts") or []
-                text_parts = [
-                    html_lib.escape(str(p))
-                    for p in message_parts
-                    if isinstance(p, str) and p
-                ]
-                text = " ".join(text_parts)
-                if text:
-                    parts.append(f"<div>{text}</div>")
+            # author heading
+            author_label = message.author.role.capitalize()
+            parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
+
+            # message ID metadata
+            parts.append(
+                f'<div style="font-size: x-small; color: gray;">{html_lib.escape(message.id)}</div>'
+            )
+
+            # message content (text only for now)
+            content = self._render_message_content(message)
+            parts.append(f"<div>{content}</div>")
+            parts.append("<div><br></div>")
 
         body = "".join(parts)
 
@@ -107,3 +110,23 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         if self.target == "file":
             return f"<html><body>{body}</body></html>"
         return body
+
+    def _render_message_content(self, message: Message) -> str:
+        """
+        Renders message content to Apple Notes HTML.
+
+        Args:
+            message: message to render
+
+        Returns:
+            HTML string
+        """
+        content_type = message.content.get("content_type", "text")
+
+        if content_type == "text":
+            parts = message.content.get("parts") or []
+            text = " ".join(str(p) for p in parts if p)
+            return html_lib.escape(text)
+
+        # other content types - placeholder
+        return "[Unsupported content type]"

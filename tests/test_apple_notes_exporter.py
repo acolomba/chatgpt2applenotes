@@ -154,3 +154,37 @@ def test_metadata_includes_conversation_id_and_timestamp(tmp_path: Path) -> None
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "conv-abc123" in html
     assert "Updated:" in html
+
+
+def test_renders_messages_with_author_and_content(tmp_path: Path) -> None:
+    """Messages show author role and content."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["First message"]},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="assistant"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Second message"]},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<h2>User</h2>" in html
+    assert "<h2>Assistant</h2>" in html
+    assert "First message" in html
+    assert "Second message" in html
