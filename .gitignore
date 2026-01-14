@@ -20,3 +20,10 @@ __pycache__
 
 # mac
 .DS_Store
+
+# worktrees
+.worktrees
+
+# output
+/output/*
+!/output/.gitkeep

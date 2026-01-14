@@ -22,7 +22,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-dependencies = []
+dependencies = [
+    "markdown-it-py~=3.0",
+    "Pillow~=11.0",
+]
 
 [project.scripts]
 chatgpt2applenotes = "chatgpt2applenotes:main"
@@ -91,11 +94,15 @@ exclude = ["venv/", "build/", "dist/"]
 
 # ignores third-party packages without type stubs
 [[tool.mypy.overrides]]
-module = ["requests", "hamcrest", "testcontainers.*", "tzlocal"]
+module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest", "markdown_it"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "chatgpt2applenotes_test"
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = "tests.*"
 disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
@@ -134,10 +141,25 @@ omit = [
 [tool.coverage.html]
 directory = "coverage_report"
 
+[tool.pylint.main]
+extension-pkg-allow-list = ["pytest", "PIL"]
+
 [tool.pylint.messages_control]
 disable = [
     "line-too-long",  # handled by black/ruff
+    "too-many-arguments",  # AppleScript integration requires multiple parameters
+    "too-many-positional-arguments",  # AppleScript integration requires multiple parameters
+    "too-many-locals",  # complex AppleScript generation
+    "too-many-nested-blocks",  # necessary for message parsing
+    "broad-exception-caught",  # intentional for robustness
+    "duplicate-code",  # test fixtures often have similar structures
 ]
 
 [tool.pylint.format]
 max-line-length = 88  # for consistency with black/ruff
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
+]
