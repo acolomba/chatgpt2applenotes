@@ -624,6 +624,30 @@ end tell
 
         return "".join(html_parts)
 
+    def _render_user_content(self, message: Message) -> str:
+        """
+        renders user message content (escaped HTML, no markdown).
+
+        Args:
+            message: user message to render
+
+        Returns:
+            HTML string
+        """
+        content_type = message.content.get("content_type", "text")
+
+        if content_type == "text":
+            parts = message.content.get("parts") or []
+            text = "\n".join(str(p) for p in parts if p)
+            escaped = html_lib.escape(text)
+            lines = escaped.split("\n")
+            return "<div>" + "</div>\n<div>".join(lines) + "</div>"
+
+        if content_type == "multimodal_text":
+            return self._render_multimodal_content(message.content, escape_text=True)
+
+        return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
+
     def _render_message_content(self, message: Message) -> str:
         """
         Renders message content to Apple Notes HTML.
@@ -634,21 +658,11 @@ end tell
         Returns:
             HTML string
         """
-        content_type = message.content.get("content_type", "text")
-
         # user messages: escape HTML but don't process markdown
         if message.author.role == "user":
-            if content_type == "text":
-                parts = message.content.get("parts") or []
-                text = "\n".join(str(p) for p in parts if p)
-                escaped = html_lib.escape(text)
-                lines = escaped.split("\n")
-                return "<div>" + "</div>\n<div>".join(lines) + "</div>"
-            if content_type == "multimodal_text":
-                return self._render_multimodal_content(
-                    message.content, escape_text=True
-                )
-            return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
+            return self._render_user_content(message)
+
+        content_type = message.content.get("content_type", "text")
 
         # assistant/tool messages continue through markdown processing
         if content_type == "text":
@@ -659,7 +673,12 @@ end tell
         if content_type == "multimodal_text":
             return self._render_multimodal_content(message.content)
 
-        # other content types - placeholder
+        if content_type == "code":
+            text = message.content.get("text", "")
+            escaped = html_lib.escape(text)
+            return f"<div><tt>{escaped}</tt></div>"
+
+        # other content types - unsupported
         return "[Unsupported content type]"
 
     def extract_last_synced_id(self, html: str) -> Optional[str]:
