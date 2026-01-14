@@ -835,3 +835,45 @@ def test_user_messages_not_processed_as_markdown(tmp_path: Path) -> None:
     # should preserve the literal text
     assert "*asterisks*" in html
     assert "_underscores_" in html
+
+
+def test_filters_messages_not_to_all(tmp_path: Path) -> None:
+    """messages with recipient != 'all' are filtered out."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["User message"]},
+                metadata={"recipient": "all"},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="assistant"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Internal tool call"]},
+                metadata={"recipient": "browser"},
+            ),
+            Message(
+                id="msg-3",
+                author=Author(role="assistant"),
+                create_time=1234567896.0,
+                content={"content_type": "text", "parts": ["Visible response"]},
+                metadata={"recipient": "all"},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "User message" in html
+    assert "Visible response" in html
+    assert "Internal tool call" not in html

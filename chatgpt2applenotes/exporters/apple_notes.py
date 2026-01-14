@@ -407,6 +407,13 @@ end tell
             if content_type == "model_editable_context":
                 continue
 
+            # skips messages not addressed to all (internal tool communications)
+            recipient = (
+                message.metadata.get("recipient", "all") if message.metadata else "all"
+            )
+            if recipient != "all":
+                continue
+
             # author heading
             author_label = self._get_author_label(message)
             parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
@@ -669,6 +676,13 @@ end tell
         for message in new_messages:
             content_type = message.content.get("content_type", "text")
             if content_type == "model_editable_context":
+                continue
+
+            # skips messages not addressed to all (internal tool communications)
+            recipient = (
+                message.metadata.get("recipient", "all") if message.metadata else "all"
+            )
+            if recipient != "all":
                 continue
 
             # author heading
