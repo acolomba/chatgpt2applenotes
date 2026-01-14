@@ -555,12 +555,15 @@ end tell
             # if conversion fails, return original
             return data_url
 
-    def _render_multimodal_content(self, content: dict[str, Any]) -> str:
+    def _render_multimodal_content(
+        self, content: dict[str, Any], escape_text: bool = False
+    ) -> str:
         """
         Renders multimodal content (text + images).
 
         Args:
             content: message content dict
+            escape_text: if True, escape HTML instead of rendering markdown
 
         Returns:
             HTML string with text only (images handled as attachments)
@@ -570,8 +573,12 @@ end tell
 
         for part in parts:
             if isinstance(part, str):
-                # text part - renders as markdown
-                html_parts.append(self._markdown_to_apple_notes(part))
+                if escape_text:
+                    escaped = html_lib.escape(part)
+                    lines = escaped.split("\n")
+                    html_parts.append("<div>" + "</div>\n<div>".join(lines) + "</div>")
+                else:
+                    html_parts.append(self._markdown_to_apple_notes(part))
             # skips image parts - they're added as attachments
 
         return "".join(html_parts)
@@ -588,6 +595,21 @@ end tell
         """
         content_type = message.content.get("content_type", "text")
 
+        # user messages: escape HTML but don't process markdown
+        if message.author.role == "user":
+            if content_type == "text":
+                parts = message.content.get("parts") or []
+                text = "\n".join(str(p) for p in parts if p)
+                escaped = html_lib.escape(text)
+                lines = escaped.split("\n")
+                return "<div>" + "</div>\n<div>".join(lines) + "</div>"
+            if content_type == "multimodal_text":
+                return self._render_multimodal_content(
+                    message.content, escape_text=True
+                )
+            return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
+
+        # assistant/tool messages continue through markdown processing
         if content_type == "text":
             parts = message.content.get("parts") or []
             text = "\n".join(str(p) for p in parts if p)

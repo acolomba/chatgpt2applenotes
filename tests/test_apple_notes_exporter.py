@@ -211,7 +211,7 @@ def test_renders_markdown_in_messages(tmp_path: Path) -> None:
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -242,7 +242,7 @@ def test_renders_code_blocks(tmp_path: Path) -> None:
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -275,7 +275,7 @@ def test_renders_code_blocks_with_special_chars_in_language(tmp_path: Path) -> N
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -307,7 +307,7 @@ def test_renders_lists(tmp_path: Path) -> None:
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -800,3 +800,38 @@ def test_text_parts_joined_with_newlines(tmp_path: Path) -> None:
     assert "Second paragraph." in html
     # should NOT be "First paragraph. Second paragraph." in same element
     assert "First paragraph. Second paragraph." not in html
+
+
+def test_user_messages_not_processed_as_markdown(tmp_path: Path) -> None:
+    """user messages are escaped but not markdown-processed."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["*asterisks* and _underscores_ should stay literal"],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # should NOT be converted to italic
+    assert "<i>asterisks</i>" not in html
+    assert "<em>asterisks</em>" not in html
+    assert "<i>underscores</i>" not in html
+    assert "<em>underscores</em>" not in html
+    # should preserve the literal text
+    assert "*asterisks*" in html
+    assert "_underscores_" in html
