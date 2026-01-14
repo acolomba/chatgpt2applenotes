@@ -424,6 +424,7 @@ def test_full_conversation_with_all_features(tmp_path: Path) -> None:
     assert "Internal" not in html
     # footnote removed, LaTeX preserved
     assert "【" not in html
+    assert "†" not in html
     assert "x^2" in html
     # tool text filtered
     assert "Hidden" not in html
