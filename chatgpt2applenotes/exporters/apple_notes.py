@@ -43,6 +43,26 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             return parts[0], parts[1]
         return folder_name, None
 
+    def _get_author_label(self, message: Message) -> str:
+        """
+        returns friendly author label for message.
+
+        Args:
+            message: message to get label for
+
+        Returns:
+            'You' for user, 'ChatGPT' for assistant, 'Plugin (name)' for tools
+        """
+        role = message.author.role
+        if role == "assistant":
+            return "ChatGPT"
+        if role == "user":
+            return "You"
+        if role == "tool":
+            name = message.author.name
+            return f"Plugin ({name})" if name else "Plugin"
+        return role.capitalize()
+
     def _get_folder_ref(self, folder_name: str) -> str:
         """
         generates AppleScript folder reference for given path.
@@ -388,7 +408,7 @@ end tell
                 continue
 
             # author heading
-            author_label = message.author.role.capitalize()
+            author_label = self._get_author_label(message)
             parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
             parts.append("<div><br></div>")
 
@@ -630,7 +650,7 @@ end tell
                 continue
 
             # author heading
-            author_label = message.author.role.capitalize()
+            author_label = self._get_author_label(message)
             parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
             parts.append("<div><br></div>")
 

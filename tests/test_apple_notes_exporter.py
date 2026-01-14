@@ -195,8 +195,8 @@ def test_renders_messages_with_author_and_content(tmp_path: Path) -> None:
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<h2>User</h2>" in html
-    assert "<h2>Assistant</h2>" in html
+    assert "<h2>You</h2>" in html
+    assert "<h2>ChatGPT</h2>" in html
     assert "First message" in html
     assert "Second message" in html
 
@@ -405,7 +405,7 @@ def test_export_real_conversation(tmp_path: Path) -> None:
     assert conversation.id in html
     # has messages
     assert len(conversation.messages) > 0
-    assert "<h2>User</h2>" in html or "<h2>Assistant</h2>" in html
+    assert "<h2>You</h2>" in html or "<h2>ChatGPT</h2>" in html
 
 
 def test_html_includes_footer_with_ids(tmp_path: Path) -> None:
@@ -725,6 +725,49 @@ def test_move_note_to_archive_returns_false_when_not_found() -> None:
         result = exporter.move_note_to_archive("TestFolder", "conv-123")
 
     assert result is False
+
+
+def test_author_labels_use_friendly_names(tmp_path: Path) -> None:
+    """author labels use 'ChatGPT', 'You', 'Plugin (name)' instead of roles."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["Hello"]},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="assistant"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Hi there"]},
+            ),
+            Message(
+                id="msg-3",
+                author=Author(role="tool", name="browser"),
+                create_time=1234567896.0,
+                content={"content_type": "text", "parts": ["Search results"]},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<h2>You</h2>" in html
+    assert "<h2>ChatGPT</h2>" in html
+    assert "<h2>Plugin (browser)</h2>" in html
+    # old labels should not appear
+    assert "<h2>User</h2>" not in html
+    assert "<h2>Assistant</h2>" not in html
+    assert "<h2>Tool</h2>" not in html
 
 
 def test_text_parts_joined_with_newlines(tmp_path: Path) -> None:
