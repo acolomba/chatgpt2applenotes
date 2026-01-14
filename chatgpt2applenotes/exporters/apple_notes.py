@@ -63,6 +63,33 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             return f"Plugin ({name})" if name else "Plugin"
         return role.capitalize()
 
+    def _tool_message_has_visible_content(self, message: Message) -> bool:
+        """
+        checks if tool message has user-visible content.
+
+        Tool messages are only shown if they contain:
+        - multimodal_text (e.g., DALL-E generated images)
+        - execution_output with images in metadata.aggregate_result
+
+        Args:
+            message: tool message to check
+
+        Returns:
+            True if message should be shown, False otherwise
+        """
+        content_type = message.content.get("content_type", "text")
+
+        if content_type == "multimodal_text":
+            return True
+
+        if content_type == "execution_output":
+            metadata = message.metadata or {}
+            aggregate_result = metadata.get("aggregate_result", {})
+            messages = aggregate_result.get("messages", [])
+            return any(msg.get("message_type") == "image" for msg in messages)
+
+        return False
+
     def _get_folder_ref(self, folder_name: str) -> str:
         """
         generates AppleScript folder reference for given path.
@@ -414,6 +441,13 @@ end tell
             if recipient != "all":
                 continue
 
+            # skips tool messages without visible content
+            if (
+                message.author.role == "tool"
+                and not self._tool_message_has_visible_content(message)
+            ):
+                continue
+
             # author heading
             author_label = self._get_author_label(message)
             parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
@@ -683,6 +717,13 @@ end tell
                 message.metadata.get("recipient", "all") if message.metadata else "all"
             )
             if recipient != "all":
+                continue
+
+            # skips tool messages without visible content
+            if (
+                message.author.role == "tool"
+                and not self._tool_message_has_visible_content(message)
+            ):
                 continue
 
             # author heading

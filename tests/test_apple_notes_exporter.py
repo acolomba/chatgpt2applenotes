@@ -749,9 +749,12 @@ def test_author_labels_use_friendly_names(tmp_path: Path) -> None:
             ),
             Message(
                 id="msg-3",
-                author=Author(role="tool", name="browser"),
+                author=Author(role="tool", name="dalle"),
                 create_time=1234567896.0,
-                content={"content_type": "text", "parts": ["Search results"]},
+                content={
+                    "content_type": "multimodal_text",
+                    "parts": ["Generated image"],
+                },
             ),
         ],
     )
@@ -763,7 +766,7 @@ def test_author_labels_use_friendly_names(tmp_path: Path) -> None:
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "<h2>You</h2>" in html
     assert "<h2>ChatGPT</h2>" in html
-    assert "<h2>Plugin (browser)</h2>" in html
+    assert "<h2>Plugin (dalle)</h2>" in html
     # old labels should not appear
     assert "<h2>User</h2>" not in html
     assert "<h2>Assistant</h2>" not in html
@@ -877,3 +880,54 @@ def test_filters_messages_not_to_all(tmp_path: Path) -> None:
     assert "User message" in html
     assert "Visible response" in html
     assert "Internal tool call" not in html
+
+
+def test_filters_tool_messages_without_visible_content(tmp_path: Path) -> None:
+    """tool messages are filtered unless they have multimodal_text or execution_output with images."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["Generate an image"]},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="tool", name="browser"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Browsing results..."]},
+            ),
+            Message(
+                id="msg-3",
+                author=Author(role="tool", name="dalle"),
+                create_time=1234567896.0,
+                content={
+                    "content_type": "multimodal_text",
+                    "parts": ["Here is your image", {"asset_pointer": "file://img"}],
+                },
+            ),
+            Message(
+                id="msg-4",
+                author=Author(role="assistant"),
+                create_time=1234567897.0,
+                content={"content_type": "text", "parts": ["Here you go!"]},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "Generate an image" in html
+    assert "Here you go!" in html
+    # tool with multimodal_text should be shown
+    assert "Here is your image" in html
+    # tool with plain text should be filtered
+    assert "Browsing results..." not in html
