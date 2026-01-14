@@ -412,15 +412,7 @@ end tell
             return None
 
     def _generate_html(self, conversation: Conversation) -> str:
-        """
-        Generates Apple Notes HTML for conversation.
-
-        Args:
-            conversation: conversation to render
-
-        Returns:
-            HTML string
-        """
+        """generates Apple Notes HTML for conversation."""
         parts = []
 
         # conversation title
@@ -603,8 +595,13 @@ end tell
                     html_parts.append("<div>" + "</div>\n<div>".join(lines) + "</div>")
                 else:
                     html_parts.append(self._markdown_to_apple_notes(part))
-            # skips image parts - they're added as attachments
-
+            elif (
+                isinstance(part, dict)
+                and part.get("content_type") == "audio_transcription"
+            ):
+                html_parts.append(
+                    f'<div><i>"{html_lib.escape(part.get("text", ""))}"</i></div>'
+                )
         return "".join(html_parts)
 
     def _render_user_content(self, message: Message) -> str:

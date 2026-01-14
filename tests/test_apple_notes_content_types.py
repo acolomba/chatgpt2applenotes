@@ -174,3 +174,37 @@ def test_renders_tether_browsing_display_content_type(tmp_path: Path) -> None:
     assert "Example Site" in html
     assert "https://example.com" in html
     assert "Another Site" in html
+
+
+def test_renders_audio_transcription_in_multimodal(tmp_path: Path) -> None:
+    """audio_transcription parts are rendered with italic styling."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "multimodal_text",
+                    "parts": [
+                        {
+                            "content_type": "audio_transcription",
+                            "text": "This is what I said",
+                        }
+                    ],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<i>" in html
+    assert "This is what I said" in html
