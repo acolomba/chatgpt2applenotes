@@ -931,33 +931,3 @@ def test_filters_tool_messages_without_visible_content(tmp_path: Path) -> None:
     assert "Here is your image" in html
     # tool with plain text should be filtered
     assert "Browsing results..." not in html
-
-
-def test_renders_code_content_type(tmp_path: Path) -> None:
-    """code content type is rendered as code block."""
-    conversation = Conversation(
-        id="conv-123",
-        title="Test",
-        create_time=1234567890.0,
-        update_time=1234567900.0,
-        messages=[
-            Message(
-                id="msg-1",
-                author=Author(role="assistant"),
-                create_time=1234567890.0,
-                content={
-                    "content_type": "code",
-                    "text": "print('hello world')",
-                },
-            )
-        ],
-    )
-
-    exporter = AppleNotesExporter(target="file")
-    output_dir = tmp_path / "notes"
-    exporter.export(conversation, str(output_dir))
-
-    html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<div><tt>" in html
-    assert "print(&#x27;hello world&#x27;)" in html
-    assert "</tt></div>" in html

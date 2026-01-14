@@ -678,8 +678,43 @@ end tell
             escaped = html_lib.escape(text)
             return f"<div><tt>{escaped}</tt></div>"
 
+        if content_type == "execution_output":
+            return self._render_execution_output(message)
+
         # other content types - unsupported
         return "[Unsupported content type]"
+
+    def _render_execution_output(self, message: Message) -> str:
+        """
+        renders execution_output content type (code execution results).
+
+        If the output contains images (e.g., matplotlib plots), renders those.
+        Otherwise renders the text result as a code block.
+
+        Args:
+            message: message with execution_output content type
+
+        Returns:
+            HTML string
+        """
+        metadata = message.metadata or {}
+        aggregate_result = metadata.get("aggregate_result", {})
+        messages = aggregate_result.get("messages", [])
+        image_messages = [m for m in messages if m.get("message_type") == "image"]
+
+        if image_messages:
+            parts = []
+            for img in image_messages:
+                url = img.get("image_url", "")
+                escaped_url = html_lib.escape(url)
+                parts.append(
+                    f'<div><img src="{escaped_url}" style="max-width: 100%;"></div>'
+                )
+            return "\n".join(parts)
+
+        text = message.content.get("text", "")
+        escaped = html_lib.escape(text)
+        return f"<div><tt>Result:\n{escaped}</tt></div>"
 
     def extract_last_synced_id(self, html: str) -> Optional[str]:
         """
