@@ -195,8 +195,8 @@ def test_renders_messages_with_author_and_content(tmp_path: Path) -> None:
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<h2>User</h2>" in html
-    assert "<h2>Assistant</h2>" in html
+    assert "<h2>You</h2>" in html
+    assert "<h2>ChatGPT</h2>" in html
     assert "First message" in html
     assert "Second message" in html
 
@@ -211,7 +211,7 @@ def test_renders_markdown_in_messages(tmp_path: Path) -> None:
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -242,7 +242,7 @@ def test_renders_code_blocks(tmp_path: Path) -> None:
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -275,7 +275,7 @@ def test_renders_code_blocks_with_special_chars_in_language(tmp_path: Path) -> N
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -307,7 +307,7 @@ def test_renders_lists(tmp_path: Path) -> None:
         messages=[
             Message(
                 id="msg-1",
-                author=Author(role="user"),
+                author=Author(role="assistant"),
                 create_time=1234567890.0,
                 content={
                     "content_type": "text",
@@ -405,7 +405,7 @@ def test_export_real_conversation(tmp_path: Path) -> None:
     assert conversation.id in html
     # has messages
     assert len(conversation.messages) > 0
-    assert "<h2>User</h2>" in html or "<h2>Assistant</h2>" in html
+    assert "<h2>You</h2>" in html or "<h2>ChatGPT</h2>" in html
 
 
 def test_html_includes_footer_with_ids(tmp_path: Path) -> None:
@@ -725,3 +725,209 @@ def test_move_note_to_archive_returns_false_when_not_found() -> None:
         result = exporter.move_note_to_archive("TestFolder", "conv-123")
 
     assert result is False
+
+
+def test_author_labels_use_friendly_names(tmp_path: Path) -> None:
+    """author labels use 'ChatGPT', 'You', 'Plugin (name)' instead of roles."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["Hello"]},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="assistant"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Hi there"]},
+            ),
+            Message(
+                id="msg-3",
+                author=Author(role="tool", name="dalle"),
+                create_time=1234567896.0,
+                content={
+                    "content_type": "multimodal_text",
+                    "parts": ["Generated image"],
+                },
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "<h2>You</h2>" in html
+    assert "<h2>ChatGPT</h2>" in html
+    assert "<h2>Plugin (dalle)</h2>" in html
+    # old labels should not appear
+    assert "<h2>User</h2>" not in html
+    assert "<h2>Assistant</h2>" not in html
+    assert "<h2>Tool</h2>" not in html
+
+
+def test_text_parts_joined_with_newlines(tmp_path: Path) -> None:
+    """text parts are joined with newlines, not spaces."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["First paragraph.", "Second paragraph."],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # parts should be in separate divs (paragraphs), not joined with space
+    assert "First paragraph.</div>" in html or "First paragraph.\n" in html
+    assert "Second paragraph." in html
+    # should NOT be "First paragraph. Second paragraph." in same element
+    assert "First paragraph. Second paragraph." not in html
+
+
+def test_user_messages_not_processed_as_markdown(tmp_path: Path) -> None:
+    """user messages are escaped but not markdown-processed."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["*asterisks* and _underscores_ should stay literal"],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # should NOT be converted to italic
+    assert "<i>asterisks</i>" not in html
+    assert "<em>asterisks</em>" not in html
+    assert "<i>underscores</i>" not in html
+    assert "<em>underscores</em>" not in html
+    # should preserve the literal text
+    assert "*asterisks*" in html
+    assert "_underscores_" in html
+
+
+def test_filters_messages_not_to_all(tmp_path: Path) -> None:
+    """messages with recipient != 'all' are filtered out."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["User message"]},
+                metadata={"recipient": "all"},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="assistant"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Internal tool call"]},
+                metadata={"recipient": "browser"},
+            ),
+            Message(
+                id="msg-3",
+                author=Author(role="assistant"),
+                create_time=1234567896.0,
+                content={"content_type": "text", "parts": ["Visible response"]},
+                metadata={"recipient": "all"},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "User message" in html
+    assert "Visible response" in html
+    assert "Internal tool call" not in html
+
+
+def test_filters_tool_messages_without_visible_content(tmp_path: Path) -> None:
+    """tool messages are filtered unless they have multimodal_text or execution_output with images."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["Generate an image"]},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="tool", name="browser"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Browsing results..."]},
+            ),
+            Message(
+                id="msg-3",
+                author=Author(role="tool", name="dalle"),
+                create_time=1234567896.0,
+                content={
+                    "content_type": "multimodal_text",
+                    "parts": ["Here is your image", {"asset_pointer": "file://img"}],
+                },
+            ),
+            Message(
+                id="msg-4",
+                author=Author(role="assistant"),
+                create_time=1234567897.0,
+                content={"content_type": "text", "parts": ["Here you go!"]},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "Generate an image" in html
+    assert "Here you go!" in html
+    # tool with multimodal_text should be shown
+    assert "Here is your image" in html
+    # tool with plain text should be filtered
+    assert "Browsing results..." not in html

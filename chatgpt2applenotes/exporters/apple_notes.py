@@ -7,13 +7,19 @@ import subprocess
 import tempfile
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, Optional, cast
+from typing import Any, Callable, Literal, Optional, cast
 
 from markdown_it import MarkdownIt
 from PIL import Image
 
 from chatgpt2applenotes.core.models import Conversation, Message
 from chatgpt2applenotes.exporters.base import Exporter
+
+LATEX_PATTERN = re.compile(
+    r"(\$\$[\s\S]+?\$\$)|(\$[^\$\n]+?\$)|(\\\[[\s\S]+?\\\])|(\\\([\s\S]+?\\\))",
+    re.MULTILINE,
+)
+FOOTNOTE_PATTERN = re.compile(r"【\d+†\([^)]+\)】")
 
 
 class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
@@ -42,6 +48,53 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             parts = folder_name.split("/", 1)
             return parts[0], parts[1]
         return folder_name, None
+
+    def _get_author_label(self, message: Message) -> str:
+        """
+        returns friendly author label for message.
+
+        Args:
+            message: message to get label for
+
+        Returns:
+            'You' for user, 'ChatGPT' for assistant, 'Plugin (name)' for tools
+        """
+        role = message.author.role
+        if role == "assistant":
+            return "ChatGPT"
+        if role == "user":
+            return "You"
+        if role == "tool":
+            name = message.author.name
+            return f"Plugin ({name})" if name else "Plugin"
+        return role.capitalize()
+
+    def _tool_message_has_visible_content(self, message: Message) -> bool:
+        """
+        checks if tool message has user-visible content.
+
+        Tool messages are only shown if they contain:
+        - multimodal_text (e.g., DALL-E generated images)
+        - execution_output with images in metadata.aggregate_result
+
+        Args:
+            message: tool message to check
+
+        Returns:
+            True if message should be shown, False otherwise
+        """
+        content_type = message.content.get("content_type", "text")
+
+        if content_type == "multimodal_text":
+            return True
+
+        if content_type == "execution_output":
+            metadata = message.metadata or {}
+            aggregate_result = metadata.get("aggregate_result", {})
+            messages = aggregate_result.get("messages", [])
+            return any(msg.get("message_type") == "image" for msg in messages)
+
+        return False
 
     def _get_folder_ref(self, folder_name: str) -> str:
         """
@@ -365,15 +418,7 @@ end tell
             return None
 
     def _generate_html(self, conversation: Conversation) -> str:
-        """
-        Generates Apple Notes HTML for conversation.
-
-        Args:
-            conversation: conversation to render
-
-        Returns:
-            HTML string
-        """
+        """generates Apple Notes HTML for conversation."""
         parts = []
 
         # conversation title
@@ -387,8 +432,22 @@ end tell
             if content_type == "model_editable_context":
                 continue
 
+            # skips messages not addressed to all (internal tool communications)
+            recipient = (
+                message.metadata.get("recipient", "all") if message.metadata else "all"
+            )
+            if recipient != "all":
+                continue
+
+            # skips tool messages without visible content
+            if (
+                message.author.role == "tool"
+                and not self._tool_message_has_visible_content(message)
+            ):
+                continue
+
             # author heading
-            author_label = message.author.role.capitalize()
+            author_label = self._get_author_label(message)
             parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
             parts.append("<div><br></div>")
 
@@ -412,25 +471,25 @@ end tell
             return f"<html><body>{body}</body></html>"
         return body
 
+    def _protect_latex(self, text: str) -> tuple[str, list[str]]:
+        """replaces LaTeX with placeholders to protect from markdown processing."""
+        matches: list[str] = []
+
+        def replacer(match: re.Match[str]) -> str:
+            matches.append(match.group(0))
+            return f"\u2563{len(matches) - 1}\u2563"
+
+        return LATEX_PATTERN.sub(replacer, text), matches
+
+    def _restore_latex(self, text: str, matches: list[str]) -> str:
+        """restores LaTeX from placeholders."""
+        for i, latex in enumerate(matches):
+            text = text.replace(f"\u2563{i}\u2563", html_lib.escape(latex))
+        return text
+
     def _markdown_to_apple_notes(self, markdown: str) -> str:
-        """
-        Converts markdown to Apple Notes HTML format.
-
-        Uses custom markdown-it renderer rules to generate Apple Notes-compatible HTML:
-        - Code blocks: <pre><code> → <div><tt>
-        - Paragraphs: <p> → <div>
-        - Bold: <strong> → <b>
-        - Italic: <em> → <i>
-        - Inline code: <code> → <tt>
-        - Tables: rendered as HTML tables
-        - Headers: wrapped with <br> tags for spacing
-
-        Args:
-            markdown: markdown text
-
-        Returns:
-            Apple Notes-compatible HTML
-        """
+        """converts markdown to Apple Notes HTML format."""
+        protected_text, latex_matches = self._protect_latex(markdown)
         md = MarkdownIt()
         # enables table support
         md.enable("table")
@@ -492,19 +551,11 @@ end tell
 
         renderer.rules["image"] = render_image
 
-        return cast(str, md.render(markdown))
+        result = cast(str, md.render(protected_text))
+        return self._restore_latex(result, latex_matches) if latex_matches else result
 
     def _convert_image_to_png_data_url(self, data_url: str) -> str:
-        """
-        converts image data URL to PNG format for Apple Notes compatibility.
-
-        Args:
-            data_url: data URL (e.g., data:image/webp;base64,...)
-
-        Returns:
-            PNG data URL (data:image/png;base64,...)
-        """
-        # parses data URL
+        """converts image data URL to PNG format for Apple Notes compatibility."""
         if not data_url.startswith("data:"):
             return data_url
 
@@ -535,33 +586,36 @@ end tell
             # if conversion fails, return original
             return data_url
 
-    def _render_multimodal_content(self, content: dict[str, Any]) -> str:
-        """
-        Renders multimodal content (text + images).
-
-        Args:
-            content: message content dict
-
-        Returns:
-            HTML string with text only (images handled as attachments)
-        """
+    def _render_multimodal_content(
+        self, content: dict[str, Any], escape_text: bool = False
+    ) -> str:
+        """renders multimodal content (text + images) to HTML."""
         parts = content.get("parts") or []
         html_parts = []
 
         for part in parts:
             if isinstance(part, str):
-                # text part - renders as markdown
-                html_parts.append(self._markdown_to_apple_notes(part))
-            # skips image parts - they're added as attachments
-
+                if escape_text:
+                    escaped = html_lib.escape(part)
+                    lines = escaped.split("\n")
+                    html_parts.append("<div>" + "</div>\n<div>".join(lines) + "</div>")
+                else:
+                    html_parts.append(self._markdown_to_apple_notes(part))
+            elif (
+                isinstance(part, dict)
+                and part.get("content_type") == "audio_transcription"
+            ):
+                html_parts.append(
+                    f'<div><i>"{html_lib.escape(part.get("text", ""))}"</i></div>'
+                )
         return "".join(html_parts)
 
-    def _render_message_content(self, message: Message) -> str:
+    def _render_user_content(self, message: Message) -> str:
         """
-        Renders message content to Apple Notes HTML.
+        renders user message content (escaped HTML, no markdown).
 
         Args:
-            message: message to render
+            message: user message to render
 
         Returns:
             HTML string
@@ -570,14 +624,99 @@ end tell
 
         if content_type == "text":
             parts = message.content.get("parts") or []
-            text = " ".join(str(p) for p in parts if p)
-            return self._markdown_to_apple_notes(text)
+            text = "\n".join(str(p) for p in parts if p)
+            escaped = html_lib.escape(text)
+            lines = escaped.split("\n")
+            return "<div>" + "</div>\n<div>".join(lines) + "</div>"
 
         if content_type == "multimodal_text":
-            return self._render_multimodal_content(message.content)
+            return self._render_multimodal_content(message.content, escape_text=True)
 
-        # other content types - placeholder
-        return "[Unsupported content type]"
+        return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
+
+    def _render_message_content(self, message: Message) -> str:
+        """renders message content to Apple Notes HTML."""
+        # user messages: escape HTML but don't process markdown
+        if message.author.role == "user":
+            return self._render_user_content(message)
+
+        content_type = message.content.get("content_type", "text")
+
+        # assistant/tool messages continue through markdown processing
+        renderers: dict[str, Callable[[], str]] = {
+            "text": lambda: self._render_text_content(message),
+            "multimodal_text": lambda: self._render_multimodal_content(message.content),
+            "code": lambda: self._render_code_content(message),
+            "execution_output": lambda: self._render_execution_output(message),
+            "tether_quote": lambda: self._render_tether_quote(message),
+            "tether_browsing_display": lambda: self._render_tether_browsing_display(
+                message
+            ),
+        }
+
+        renderer = renderers.get(content_type)
+        return renderer() if renderer else "[Unsupported content type]"
+
+    def _render_text_content(self, message: Message) -> str:
+        """renders text content type as markdown."""
+        parts = message.content.get("parts") or []
+        text = "\n".join(str(p) for p in parts if p)
+        text = FOOTNOTE_PATTERN.sub("", text)  # removes citation marks
+        return self._markdown_to_apple_notes(text)
+
+    def _render_code_content(self, message: Message) -> str:
+        """renders code content type as monospace block."""
+        text = message.content.get("text", "")
+        return f"<div><tt>{html_lib.escape(text)}</tt></div>"
+
+    def _render_execution_output(self, message: Message) -> str:
+        """renders execution_output content type (images from aggregate_result or text)."""
+        metadata = message.metadata or {}
+        aggregate_result = metadata.get("aggregate_result", {})
+        messages = aggregate_result.get("messages", [])
+        image_messages = [m for m in messages if m.get("message_type") == "image"]
+
+        if image_messages:
+            parts = []
+            for img in image_messages:
+                url = img.get("image_url", "")
+                escaped_url = html_lib.escape(url)
+                parts.append(
+                    f'<div><img src="{escaped_url}" style="max-width: 100%;"></div>'
+                )
+            return "\n".join(parts)
+
+        text = message.content.get("text", "")
+        escaped = html_lib.escape(text)
+        return f"<div><tt>Result:\n{escaped}</tt></div>"
+
+    def _render_tether_quote(self, message: Message) -> str:
+        """renders tether_quote content type (quotes/citations from web browsing)."""
+        title = message.content.get("title", "")
+        text = message.content.get("text", "")
+        quote_text = title or text or ""
+        escaped = html_lib.escape(quote_text)
+        return f"<blockquote>{escaped}</blockquote>"
+
+    def _render_tether_browsing_display(self, message: Message) -> str:
+        """renders tether_browsing_display content type (browsing results with links)."""
+        metadata = message.metadata or {}
+        cite_metadata = metadata.get("_cite_metadata", {})
+        metadata_list = cite_metadata.get("metadata_list", [])
+
+        if not metadata_list:
+            return ""
+
+        parts = []
+        for item in metadata_list:
+            title = item.get("title", "")
+            url = item.get("url", "")
+            escaped_title = html_lib.escape(title)
+            escaped_url = html_lib.escape(url)
+            parts.append(
+                f'<blockquote><a href="{escaped_url}">{escaped_title}</a></blockquote>'
+            )
+        return "\n".join(parts)
 
     def extract_last_synced_id(self, html: str) -> Optional[str]:
         """
@@ -629,8 +768,22 @@ end tell
             if content_type == "model_editable_context":
                 continue
 
+            # skips messages not addressed to all (internal tool communications)
+            recipient = (
+                message.metadata.get("recipient", "all") if message.metadata else "all"
+            )
+            if recipient != "all":
+                continue
+
+            # skips tool messages without visible content
+            if (
+                message.author.role == "tool"
+                and not self._tool_message_has_visible_content(message)
+            ):
+                continue
+
             # author heading
-            author_label = message.author.role.capitalize()
+            author_label = self._get_author_label(message)
             parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
             parts.append("<div><br></div>")
 
