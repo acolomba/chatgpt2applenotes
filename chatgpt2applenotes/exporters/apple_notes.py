@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, Optional, cast
+from typing import Any, Callable, Literal, Optional, cast
 
 from markdown_it import MarkdownIt
 from PIL import Image
@@ -474,24 +474,7 @@ end tell
         return body
 
     def _markdown_to_apple_notes(self, markdown: str) -> str:
-        """
-        Converts markdown to Apple Notes HTML format.
-
-        Uses custom markdown-it renderer rules to generate Apple Notes-compatible HTML:
-        - Code blocks: <pre><code> → <div><tt>
-        - Paragraphs: <p> → <div>
-        - Bold: <strong> → <b>
-        - Italic: <em> → <i>
-        - Inline code: <code> → <tt>
-        - Tables: rendered as HTML tables
-        - Headers: wrapped with <br> tags for spacing
-
-        Args:
-            markdown: markdown text
-
-        Returns:
-            Apple Notes-compatible HTML
-        """
+        """converts markdown to Apple Notes HTML format."""
         md = MarkdownIt()
         # enables table support
         md.enable("table")
@@ -649,15 +632,7 @@ end tell
         return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
 
     def _render_message_content(self, message: Message) -> str:
-        """
-        Renders message content to Apple Notes HTML.
-
-        Args:
-            message: message to render
-
-        Returns:
-            HTML string
-        """
+        """renders message content to Apple Notes HTML."""
         # user messages: escape HTML but don't process markdown
         if message.author.role == "user":
             return self._render_user_content(message)
@@ -665,24 +640,28 @@ end tell
         content_type = message.content.get("content_type", "text")
 
         # assistant/tool messages continue through markdown processing
-        if content_type == "text":
-            parts = message.content.get("parts") or []
-            text = "\n".join(str(p) for p in parts if p)
-            return self._markdown_to_apple_notes(text)
+        renderers: dict[str, Callable[[], str]] = {
+            "text": lambda: self._render_text_content(message),
+            "multimodal_text": lambda: self._render_multimodal_content(message.content),
+            "code": lambda: self._render_code_content(message),
+            "execution_output": lambda: self._render_execution_output(message),
+            "tether_quote": lambda: self._render_tether_quote(message),
+        }
 
-        if content_type == "multimodal_text":
-            return self._render_multimodal_content(message.content)
+        renderer = renderers.get(content_type)
+        return renderer() if renderer else "[Unsupported content type]"
 
-        if content_type == "code":
-            text = message.content.get("text", "")
-            escaped = html_lib.escape(text)
-            return f"<div><tt>{escaped}</tt></div>"
+    def _render_text_content(self, message: Message) -> str:
+        """renders text content type as markdown."""
+        parts = message.content.get("parts") or []
+        text = "\n".join(str(p) for p in parts if p)
+        return self._markdown_to_apple_notes(text)
 
-        if content_type == "execution_output":
-            return self._render_execution_output(message)
-
-        # other content types - unsupported
-        return "[Unsupported content type]"
+    def _render_code_content(self, message: Message) -> str:
+        """renders code content type as monospace block."""
+        text = message.content.get("text", "")
+        escaped = html_lib.escape(text)
+        return f"<div><tt>{escaped}</tt></div>"
 
     def _render_execution_output(self, message: Message) -> str:
         """
@@ -715,6 +694,22 @@ end tell
         text = message.content.get("text", "")
         escaped = html_lib.escape(text)
         return f"<div><tt>Result:\n{escaped}</tt></div>"
+
+    def _render_tether_quote(self, message: Message) -> str:
+        """
+        renders tether_quote content type (quotes/citations from web browsing).
+
+        Args:
+            message: message with tether_quote content type
+
+        Returns:
+            HTML blockquote string
+        """
+        title = message.content.get("title", "")
+        text = message.content.get("text", "")
+        quote_text = title or text or ""
+        escaped = html_lib.escape(quote_text)
+        return f"<blockquote>{escaped}</blockquote>"
 
     def extract_last_synced_id(self, html: str) -> Optional[str]:
         """
