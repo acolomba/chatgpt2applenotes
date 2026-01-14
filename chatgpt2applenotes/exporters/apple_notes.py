@@ -646,6 +646,9 @@ end tell
             "code": lambda: self._render_code_content(message),
             "execution_output": lambda: self._render_execution_output(message),
             "tether_quote": lambda: self._render_tether_quote(message),
+            "tether_browsing_display": lambda: self._render_tether_browsing_display(
+                message
+            ),
         }
 
         renderer = renderers.get(content_type)
@@ -664,18 +667,7 @@ end tell
         return f"<div><tt>{escaped}</tt></div>"
 
     def _render_execution_output(self, message: Message) -> str:
-        """
-        renders execution_output content type (code execution results).
-
-        If the output contains images (e.g., matplotlib plots), renders those.
-        Otherwise renders the text result as a code block.
-
-        Args:
-            message: message with execution_output content type
-
-        Returns:
-            HTML string
-        """
+        """renders execution_output content type (images from aggregate_result or text)."""
         metadata = message.metadata or {}
         aggregate_result = metadata.get("aggregate_result", {})
         messages = aggregate_result.get("messages", [])
@@ -696,20 +688,32 @@ end tell
         return f"<div><tt>Result:\n{escaped}</tt></div>"
 
     def _render_tether_quote(self, message: Message) -> str:
-        """
-        renders tether_quote content type (quotes/citations from web browsing).
-
-        Args:
-            message: message with tether_quote content type
-
-        Returns:
-            HTML blockquote string
-        """
+        """renders tether_quote content type (quotes/citations from web browsing)."""
         title = message.content.get("title", "")
         text = message.content.get("text", "")
         quote_text = title or text or ""
         escaped = html_lib.escape(quote_text)
         return f"<blockquote>{escaped}</blockquote>"
+
+    def _render_tether_browsing_display(self, message: Message) -> str:
+        """renders tether_browsing_display content type (browsing results with links)."""
+        metadata = message.metadata or {}
+        cite_metadata = metadata.get("_cite_metadata", {})
+        metadata_list = cite_metadata.get("metadata_list", [])
+
+        if not metadata_list:
+            return ""
+
+        parts = []
+        for item in metadata_list:
+            title = item.get("title", "")
+            url = item.get("url", "")
+            escaped_title = html_lib.escape(title)
+            escaped_url = html_lib.escape(url)
+            parts.append(
+                f'<blockquote><a href="{escaped_url}">{escaped_title}</a></blockquote>'
+            )
+        return "\n".join(parts)
 
     def extract_last_synced_id(self, html: str) -> Optional[str]:
         """
