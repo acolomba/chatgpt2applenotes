@@ -24,6 +24,7 @@ classifiers = [
 
 dependencies = [
     "markdown-it-py~=3.0",
+    "Pillow~=11.0",
 ]
 
 [project.scripts]
@@ -141,11 +142,16 @@ omit = [
 directory = "coverage_report"
 
 [tool.pylint.main]
-extension-pkg-allow-list = ["pytest"]
+extension-pkg-allow-list = ["pytest", "PIL"]
 
 [tool.pylint.messages_control]
 disable = [
     "line-too-long",  # handled by black/ruff
+    "too-many-arguments",  # AppleScript integration requires multiple parameters
+    "too-many-positional-arguments",  # AppleScript integration requires multiple parameters
+    "too-many-locals",  # complex AppleScript generation
+    "too-many-nested-blocks",  # necessary for message parsing
+    "broad-exception-caught",  # intentional for robustness
 ]
 
 [tool.pylint.format]

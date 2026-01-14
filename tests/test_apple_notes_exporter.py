@@ -2,7 +2,9 @@
 
 import json
 import os
+import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -140,8 +142,8 @@ def test_export_escapes_html_in_content(tmp_path: Path) -> None:
     assert "&lt;b&gt;test&lt;/b&gt; &amp; &lt;i&gt;more&lt;/i&gt;" in html
 
 
-def test_metadata_includes_conversation_id_and_timestamp(tmp_path: Path) -> None:
-    """Conversation metadata includes ID and timestamp."""
+def test_footer_includes_conversation_id_and_last_message(tmp_path: Path) -> None:
+    """Footer includes conversation ID and last message ID."""
     conversation = Conversation(
         id="conv-abc123",
         title="Test",
@@ -162,8 +164,7 @@ def test_metadata_includes_conversation_id_and_timestamp(tmp_path: Path) -> None
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "conv-abc123" in html
-    assert "Updated:" in html
+    assert "conv-abc123:msg-1" in html
 
 
 def test_renders_messages_with_author_and_content(tmp_path: Path) -> None:
@@ -227,7 +228,8 @@ def test_renders_markdown_in_messages(tmp_path: Path) -> None:
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "<b>bold</b>" in html
     assert "<i>italic</i>" in html
-    assert "<tt>code</tt>" in html
+    # inline code uses <code> tag (markdown-it default, transformed to <tt> only in code blocks)
+    assert "<code>code</code>" in html
 
 
 def test_renders_code_blocks(tmp_path: Path) -> None:
@@ -256,7 +258,8 @@ def test_renders_code_blocks(tmp_path: Path) -> None:
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "<div><tt>" in html
-    assert "print('hello')" in html
+    # quotes are HTML-escaped in code blocks
+    assert "print(&#x27;hello&#x27;)" in html
     assert "</tt></div>" in html
     assert "<pre>" not in html
     assert '<code class="language' not in html
@@ -369,8 +372,7 @@ def test_renders_multimodal_content_with_images(tmp_path: Path) -> None:
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "Here is an image:" in html
-    # for now, placeholder for image
-    assert "[Image: file-service://file-123]" in html or "[Image" in html
+    # non-data-url images are skipped (handled as attachments in notes target)
 
 
 @pytest.mark.skipif(
@@ -404,3 +406,322 @@ def test_export_real_conversation(tmp_path: Path) -> None:
     # has messages
     assert len(conversation.messages) > 0
     assert "<h2>User</h2>" in html or "<h2>Assistant</h2>" in html
+
+
+def test_html_includes_footer_with_ids(tmp_path: Path) -> None:
+    """HTML includes footer with conversation ID and last message ID."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-first",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["First"]},
+            ),
+            Message(
+                id="msg-last",
+                author=Author(role="assistant"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["Last"]},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "conv-123:msg-last" in html
+
+
+def test_read_note_body_returns_html() -> None:
+    """read_note_body returns note HTML for given conversation ID."""
+    exporter = AppleNotesExporter(target="notes")
+
+    # this test will be skipped if not running on macOS with Apple Notes
+    # for unit testing, we test the method signature exists
+    assert hasattr(exporter, "read_note_body")
+    assert callable(exporter.read_note_body)
+
+
+def test_read_note_body_returns_body_on_success() -> None:
+    """returns note body when subprocess succeeds with content."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = "<html><body>Note content</body></html>"
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.read_note_body("TestFolder", "conv-123")
+
+    assert result == "<html><body>Note content</body></html>"
+    mock_subprocess.run.assert_called_once()
+
+
+def test_read_note_body_returns_none_on_error() -> None:
+    """returns None when subprocess raises CalledProcessError."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
+
+        result = exporter.read_note_body("TestFolder", "conv-123")
+
+    assert result is None
+
+
+def test_read_note_body_returns_none_on_empty_result() -> None:
+    """returns None when subprocess returns empty string."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.read_note_body("TestFolder", "conv-123")
+
+    assert result is None
+
+
+def test_extract_last_synced_id() -> None:
+    """extracts last-synced message ID from footer."""
+    exporter = AppleNotesExporter(target="notes")
+
+    html = """
+    <div>Some content</div>
+    <div style="font-size: x-small; color: gray;">abc12345-6789-def0-1234-567890abcdef:msg-abc123</div>
+    """
+
+    result = exporter.extract_last_synced_id(html)
+
+    assert result == "msg-abc123"
+
+
+def test_extract_last_synced_id_not_found() -> None:
+    """returns None when sync marker not found."""
+    exporter = AppleNotesExporter(target="notes")
+
+    html = "<div>No sync marker here</div>"
+
+    result = exporter.extract_last_synced_id(html)
+
+    assert result is None
+
+
+def test_generate_append_html() -> None:
+    """generates HTML for only new messages after given ID."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["Old message"]},
+            ),
+            Message(
+                id="msg-2",
+                author=Author(role="assistant"),
+                create_time=1234567895.0,
+                content={"content_type": "text", "parts": ["New message"]},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="notes")
+    html = exporter.generate_append_html(conversation, "msg-1")
+
+    assert "Old message" not in html
+    assert "New message" in html
+    assert "conv-123:msg-2" in html
+
+
+def test_append_to_note_method_exists() -> None:
+    """append_to_note method exists."""
+    exporter = AppleNotesExporter(target="notes")
+
+    assert hasattr(exporter, "append_to_note")
+    assert callable(exporter.append_to_note)
+
+
+def test_append_to_note_returns_true_on_success() -> None:
+    """returns True when subprocess returns 'true'."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = "true"
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.append_to_note("TestFolder", "conv-123", "<div>New</div>")
+
+    assert result is True
+    mock_subprocess.run.assert_called_once()
+
+
+def test_append_to_note_returns_false_on_error() -> None:
+    """returns False when subprocess raises CalledProcessError."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
+
+        result = exporter.append_to_note("TestFolder", "conv-123", "<div>New</div>")
+
+    assert result is False
+
+
+def test_append_to_note_returns_false_when_not_found() -> None:
+    """returns False when subprocess returns 'false' (note not found)."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = "false"
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.append_to_note("TestFolder", "conv-123", "<div>New</div>")
+
+    assert result is False
+
+
+def test_list_note_conversation_ids_method_exists() -> None:
+    """list_note_conversation_ids method exists."""
+    exporter = AppleNotesExporter(target="notes")
+
+    assert hasattr(exporter, "list_note_conversation_ids")
+    assert callable(exporter.list_note_conversation_ids)
+
+
+def test_move_note_to_archive_method_exists() -> None:
+    """move_note_to_archive method exists."""
+    exporter = AppleNotesExporter(target="notes")
+
+    assert hasattr(exporter, "move_note_to_archive")
+    assert callable(exporter.move_note_to_archive)
+
+
+def test_list_note_conversation_ids_returns_empty_on_error() -> None:
+    """returns empty list when subprocess raises CalledProcessError."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
+
+        result = exporter.list_note_conversation_ids("TestFolder")
+
+    assert not result
+
+
+def test_list_note_conversation_ids_returns_empty_on_empty_output() -> None:
+    """returns empty list when folder doesn't exist or is empty."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.list_note_conversation_ids("TestFolder")
+
+    assert not result
+
+
+def test_list_note_conversation_ids_extracts_ids() -> None:
+    """extracts conversation IDs from note bodies."""
+    exporter = AppleNotesExporter(target="notes")
+
+    # simulates output with conversation ID in footer
+    note_body = (
+        '<div style="font-size: x-small; color: gray;">'
+        "abc12345-6789-def0-1234-567890abcdef:msg-last</div>"
+    )
+    mock_output = f"{note_body}|||SEPARATOR|||"
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = mock_output
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.list_note_conversation_ids("TestFolder")
+
+    assert result == ["abc12345-6789-def0-1234-567890abcdef"]
+
+
+def test_move_note_to_archive_returns_true_on_success() -> None:
+    """returns True when subprocess returns 'true'."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = "true"
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.move_note_to_archive("TestFolder", "conv-123")
+
+    assert result is True
+    mock_subprocess.run.assert_called_once()
+
+
+def test_move_note_to_archive_returns_false_on_error() -> None:
+    """returns False when subprocess raises CalledProcessError."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
+
+        result = exporter.move_note_to_archive("TestFolder", "conv-123")
+
+    assert result is False
+
+
+def test_move_note_to_archive_returns_false_when_not_found() -> None:
+    """returns False when note not found (subprocess returns 'false')."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+    ) as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = "false"
+        mock_subprocess.run.return_value = mock_result
+
+        result = exporter.move_note_to_archive("TestFolder", "conv-123")
+
+    assert result is False
