@@ -570,7 +570,7 @@ end tell
 
         if content_type == "text":
             parts = message.content.get("parts") or []
-            text = " ".join(str(p) for p in parts if p)
+            text = "\n".join(str(p) for p in parts if p)
             return self._markdown_to_apple_notes(text)
 
         if content_type == "multimodal_text":

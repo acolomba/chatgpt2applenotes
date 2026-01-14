@@ -725,3 +725,35 @@ def test_move_note_to_archive_returns_false_when_not_found() -> None:
         result = exporter.move_note_to_archive("TestFolder", "conv-123")
 
     assert result is False
+
+
+def test_text_parts_joined_with_newlines(tmp_path: Path) -> None:
+    """text parts are joined with newlines, not spaces."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["First paragraph.", "Second paragraph."],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # parts should be in separate divs (paragraphs), not joined with space
+    assert "First paragraph.</div>" in html or "First paragraph.\n" in html
+    assert "Second paragraph." in html
+    # should NOT be "First paragraph. Second paragraph." in same element
+    assert "First paragraph. Second paragraph." not in html
