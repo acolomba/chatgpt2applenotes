@@ -353,3 +353,83 @@ def test_removes_footnote_marks(tmp_path: Path) -> None:
     assert "【" not in html
     assert "†" not in html
     assert "(Wikipedia)" not in html
+
+
+def test_full_conversation_with_all_features(tmp_path: Path) -> None:
+    """integration test with all new features."""
+    conversation = Conversation(
+        id="abc12345-6789-def0-1234-567890abcdef",
+        title="Full Feature Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            # user message - plain text
+            Message(
+                id="msg-1",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["*asterisks* here"]},
+                metadata={"recipient": "all"},
+            ),
+            # internal message - should be filtered
+            Message(
+                id="msg-2",
+                author=Author(role="assistant"),
+                create_time=1234567891.0,
+                content={"content_type": "text", "parts": ["Internal"]},
+                metadata={"recipient": "browser"},
+            ),
+            # assistant with footnotes and LaTeX
+            Message(
+                id="msg-3",
+                author=Author(role="assistant"),
+                create_time=1234567892.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["Result【1†(src)】: $x^2$"],
+                },
+                metadata={"recipient": "all"},
+            ),
+            # tool with text only - should be filtered
+            Message(
+                id="msg-4",
+                author=Author(role="tool", name="browser"),
+                create_time=1234567893.0,
+                content={"content_type": "text", "parts": ["Hidden"]},
+                metadata={"recipient": "all"},
+            ),
+            # tool with multimodal - should be shown
+            Message(
+                id="msg-5",
+                author=Author(role="tool", name="dalle"),
+                create_time=1234567894.0,
+                content={
+                    "content_type": "multimodal_text",
+                    "parts": ["Generated image"],
+                },
+                metadata={"recipient": "all"},
+            ),
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Full_Feature_Test.html").read_text(encoding="utf-8")
+
+    # user message preserved literally
+    assert "*asterisks* here" in html
+    # internal message filtered
+    assert "Internal" not in html
+    # footnote removed, LaTeX preserved
+    assert "【" not in html
+    assert "x^2" in html
+    # tool text filtered
+    assert "Hidden" not in html
+    # tool multimodal shown
+    assert "Generated image" in html
+    # friendly labels
+    assert "<h2>You</h2>" in html
+    assert "<h2>ChatGPT</h2>" in html
+    assert "<h2>Plugin (dalle)</h2>" in html
