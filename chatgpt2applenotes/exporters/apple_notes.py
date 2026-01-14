@@ -15,6 +15,12 @@ from PIL import Image
 from chatgpt2applenotes.core.models import Conversation, Message
 from chatgpt2applenotes.exporters.base import Exporter
 
+# LaTeX pattern: $$...$$, $...$, \[...\], \(...\)
+LATEX_PATTERN = re.compile(
+    r"(\$\$[\s\S]+?\$\$)|(\$[^\$\n]+?\$)|(\\\[[\s\S]+?\\\])|(\\\([\s\S]+?\\\))",
+    re.MULTILINE,
+)
+
 
 class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
     """exports conversations to Apple Notes-compatible HTML format."""
@@ -465,8 +471,25 @@ end tell
             return f"<html><body>{body}</body></html>"
         return body
 
+    def _protect_latex(self, text: str) -> tuple[str, list[str]]:
+        """replaces LaTeX with placeholders to protect from markdown processing."""
+        matches: list[str] = []
+
+        def replacer(match: re.Match[str]) -> str:
+            matches.append(match.group(0))
+            return f"\u2563{len(matches) - 1}\u2563"
+
+        return LATEX_PATTERN.sub(replacer, text), matches
+
+    def _restore_latex(self, text: str, matches: list[str]) -> str:
+        """restores LaTeX from placeholders."""
+        for i, latex in enumerate(matches):
+            text = text.replace(f"\u2563{i}\u2563", html_lib.escape(latex))
+        return text
+
     def _markdown_to_apple_notes(self, markdown: str) -> str:
         """converts markdown to Apple Notes HTML format."""
+        protected_text, latex_matches = self._protect_latex(markdown)
         md = MarkdownIt()
         # enables table support
         md.enable("table")
@@ -528,19 +551,11 @@ end tell
 
         renderer.rules["image"] = render_image
 
-        return cast(str, md.render(markdown))
+        result = cast(str, md.render(protected_text))
+        return self._restore_latex(result, latex_matches) if latex_matches else result
 
     def _convert_image_to_png_data_url(self, data_url: str) -> str:
-        """
-        converts image data URL to PNG format for Apple Notes compatibility.
-
-        Args:
-            data_url: data URL (e.g., data:image/webp;base64,...)
-
-        Returns:
-            PNG data URL (data:image/png;base64,...)
-        """
-        # parses data URL
+        """converts image data URL to PNG format for Apple Notes compatibility."""
         if not data_url.startswith("data:"):
             return data_url
 
@@ -574,16 +589,7 @@ end tell
     def _render_multimodal_content(
         self, content: dict[str, Any], escape_text: bool = False
     ) -> str:
-        """
-        Renders multimodal content (text + images).
-
-        Args:
-            content: message content dict
-            escape_text: if True, escape HTML instead of rendering markdown
-
-        Returns:
-            HTML string with text only (images handled as attachments)
-        """
+        """renders multimodal content (text + images) to HTML."""
         parts = content.get("parts") or []
         html_parts = []
 

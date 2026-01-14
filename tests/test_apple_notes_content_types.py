@@ -208,3 +208,107 @@ def test_renders_audio_transcription_in_multimodal(tmp_path: Path) -> None:
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "<i>" in html
     assert "This is what I said" in html
+
+
+def test_preserves_latex_in_assistant_messages(tmp_path: Path) -> None:
+    """LaTeX delimiters are preserved and not mangled by markdown processing."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": [
+                        "The formula is $E = mc^2$ and also:\n$$\\int_0^1 x^2 dx$$"
+                    ],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # LaTeX should be preserved (possibly HTML-escaped)
+    assert "E = mc^2" in html or "E = mc" in html
+    # underscores in LaTeX should not become <em> tags
+    assert "_0^1" in html or "_0" in html
+    # the integral symbol or command should be present
+    assert "int" in html
+
+
+def test_latex_underscores_not_converted_to_emphasis(tmp_path: Path) -> None:
+    """underscores inside LaTeX are not converted to emphasis tags."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    # underscores inside LaTeX: $a_1$ and $b_2$ could form emphasis
+                    # without protection: $a<i>1$ and $b</i>2$
+                    "parts": ["Variables $a_1$ and $b_2$ are defined."],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # the LaTeX should be preserved with underscores intact
+    assert "$a_1$" in html
+    assert "$b_2$" in html
+    # underscores inside LaTeX should not become emphasis tags
+    assert "<i>1$ and $b</i>" not in html
+    assert "<em>1$ and $b</em>" not in html
+
+
+def test_latex_asterisks_not_converted_to_emphasis(tmp_path: Path) -> None:
+    """asterisks inside LaTeX are not converted to emphasis tags."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    # asterisks inside LaTeX: $x*y$ would break without protection
+                    # without protection: *a $x<em>y$ b</em> done
+                    "parts": ["Star *a $x*y$ b* done"],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # the LaTeX $x*y$ should be preserved intact
+    assert "$x*y$" in html
+    # the asterisks inside LaTeX should not split the formula
+    assert "<em>a $x</em>" not in html
+    assert "<i>a $x</i>" not in html
