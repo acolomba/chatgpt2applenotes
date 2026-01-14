@@ -152,6 +152,7 @@ disable = [
     "too-many-locals",  # complex AppleScript generation
     "too-many-nested-blocks",  # necessary for message parsing
     "broad-exception-caught",  # intentional for robustness
+    "duplicate-code",  # test fixtures often have similar structures
 ]
 
 [tool.pylint.format]
