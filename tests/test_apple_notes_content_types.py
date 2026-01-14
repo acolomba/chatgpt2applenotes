@@ -312,3 +312,44 @@ def test_latex_asterisks_not_converted_to_emphasis(tmp_path: Path) -> None:
     # the asterisks inside LaTeX should not split the formula
     assert "<em>a $x</em>" not in html
     assert "<i>a $x</i>" not in html
+
+
+def test_removes_footnote_marks(tmp_path: Path) -> None:
+    """citation marks like 【11†(source)】 are removed from output."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": [
+                        "According to the source【11†(Wikipedia)】, this is true【3†(source)】."
+                    ],
+                },
+                metadata={
+                    "citations": [
+                        {"metadata": {"extra": {"cited_message_idx": 11}}},
+                        {"metadata": {"extra": {"cited_message_idx": 3}}},
+                    ]
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "According to the source" in html
+    assert "this is true" in html
+    # footnote marks should be removed
+    assert "【" not in html
+    assert "†" not in html
+    assert "(Wikipedia)" not in html

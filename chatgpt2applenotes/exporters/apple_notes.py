@@ -15,11 +15,11 @@ from PIL import Image
 from chatgpt2applenotes.core.models import Conversation, Message
 from chatgpt2applenotes.exporters.base import Exporter
 
-# LaTeX pattern: $$...$$, $...$, \[...\], \(...\)
 LATEX_PATTERN = re.compile(
     r"(\$\$[\s\S]+?\$\$)|(\$[^\$\n]+?\$)|(\\\[[\s\S]+?\\\])|(\\\([\s\S]+?\\\))",
     re.MULTILINE,
 )
+FOOTNOTE_PATTERN = re.compile(r"【\d+†\([^)]+\)】")
 
 
 class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
@@ -661,13 +661,13 @@ end tell
         """renders text content type as markdown."""
         parts = message.content.get("parts") or []
         text = "\n".join(str(p) for p in parts if p)
+        text = FOOTNOTE_PATTERN.sub("", text)  # removes citation marks
         return self._markdown_to_apple_notes(text)
 
     def _render_code_content(self, message: Message) -> str:
         """renders code content type as monospace block."""
         text = message.content.get("text", "")
-        escaped = html_lib.escape(text)
-        return f"<div><tt>{escaped}</tt></div>"
+        return f"<div><tt>{html_lib.escape(text)}</tt></div>"
 
     def _render_execution_output(self, message: Message) -> str:
         """renders execution_output content type (images from aggregate_result or text)."""
