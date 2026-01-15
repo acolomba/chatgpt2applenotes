@@ -64,6 +64,7 @@ def sync_conversations(
     dry_run: bool = False,
     overwrite: bool = False,
     archive_deleted: bool = False,
+    cc_dir: Optional[Path] = None,
 ) -> int:
     """
     syncs conversations from source to Apple Notes.
@@ -74,6 +75,7 @@ def sync_conversations(
         dry_run: if True, don't write to Apple Notes
         overwrite: if True, replace notes instead of appending
         archive_deleted: if True, move orphaned notes to Archive
+        cc_dir: optional directory to save copies of generated HTML
 
     Returns:
         exit code (0 success, 1 partial failure, 2 fatal error)
@@ -85,7 +87,7 @@ def sync_conversations(
 
     logger.info("Found %d conversation(s) to process", len(files))
 
-    exporter = AppleNotesExporter(target="notes")
+    exporter = AppleNotesExporter(target="notes", cc_dir=cc_dir)
     processed = 0
     failed = 0
     conversation_ids: list[str] = []

@@ -257,12 +257,47 @@ def test_renders_code_blocks(tmp_path: Path) -> None:
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<div><tt>" in html
+    assert "<pre>" in html
     # quotes are HTML-escaped in code blocks
     assert "print(&#x27;hello&#x27;)" in html
-    assert "</tt></div>" in html
-    assert "<pre>" not in html
+    assert "</pre>" in html
     assert '<code class="language' not in html
+
+
+def test_renders_code_blocks_with_linebreaks(tmp_path: Path) -> None:
+    """multiline code blocks preserve line breaks."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": [
+                        "```python\ndef hello():\n    print('hi')\n    return 42\n```"
+                    ],
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # each line should be present
+    assert "def hello():" in html
+    assert "print" in html
+    assert "return 42" in html
+    # code blocks should use <pre> tags to preserve whitespace
+    assert "<pre>" in html
+    assert "</pre>" in html
 
 
 def test_renders_code_blocks_with_special_chars_in_language(tmp_path: Path) -> None:
@@ -290,10 +325,9 @@ def test_renders_code_blocks_with_special_chars_in_language(tmp_path: Path) -> N
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<div><tt>" in html
+    assert "<pre>" in html
     assert "int main() {}" in html
-    assert "</tt></div>" in html
-    assert "<pre>" not in html
+    assert "</pre>" in html
     assert '<code class="language' not in html
 
 

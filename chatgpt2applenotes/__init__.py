@@ -54,6 +54,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="enable debug logging",
     )
+    parser.add_argument(
+        "--cc",
+        metavar="DIR",
+        help="save copies of generated HTML to directory",
+    )
 
     args = parser.parse_args(argv)
 
@@ -70,6 +75,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         logger.error("Source not found: %s", args.source)
         return 2
 
+    # parses cc_dir if provided
+    cc_dir = Path(args.cc) if args.cc else None
+
     try:
         return sync_conversations(
             source=source_path,
@@ -77,6 +85,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             dry_run=args.dry_run,
             overwrite=args.overwrite,
             archive_deleted=args.archive_deleted,
+            cc_dir=cc_dir,
         )
     except Exception as e:
         logger.error("Fatal error: %s", e)
