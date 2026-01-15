@@ -31,9 +31,41 @@ def test_renders_code_content_type(tmp_path: Path) -> None:
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<div><tt>" in html
+    assert "<pre>" in html
     assert "print(&#x27;hello world&#x27;)" in html
-    assert "</tt></div>" in html
+    assert "</pre>" in html
+
+
+def test_renders_code_content_type_with_linebreaks(tmp_path: Path) -> None:
+    """code content type preserves line breaks."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "code",
+                    "text": "def foo():\n    return 1",
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # code content should use <pre> tags to preserve whitespace
+    assert "<pre>" in html
+    assert "</pre>" in html
+    assert "def foo():" in html
+    assert "return 1" in html
 
 
 def test_renders_execution_output_content_type(tmp_path: Path) -> None:

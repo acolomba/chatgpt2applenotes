@@ -53,3 +53,9 @@ def test_cli_accepts_verbose_long_flag() -> None:
     """CLI accepts --verbose flag."""
     result = main(["nonexistent.json", "--verbose"])
     assert result == 2
+
+
+def test_cli_accepts_cc_flag() -> None:
+    """CLI accepts --cc flag with directory argument."""
+    result = main(["nonexistent.json", "--cc", "/tmp/cc-test"])
+    assert result == 2  # fatal error (file not found, but arg parsing succeeded)

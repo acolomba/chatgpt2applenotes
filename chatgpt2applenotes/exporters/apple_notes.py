@@ -25,40 +25,30 @@ FOOTNOTE_PATTERN = re.compile(r"【\d+†\([^)]+\)】")
 class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
     """exports conversations to Apple Notes-compatible HTML format."""
 
-    def __init__(self, target: Literal["file", "notes"] = "file") -> None:
+    def __init__(
+        self,
+        target: Literal["file", "notes"] = "file",
+        cc_dir: Optional[Path] = None,
+    ) -> None:
         """
         Initialize Apple Notes exporter.
 
         Args:
             target: export target - "file" for HTML files, "notes" for direct integration
+            cc_dir: optional directory to save copies of generated HTML
         """
         self.target = target
+        self.cc_dir = cc_dir
 
     def _parse_folder_path(self, folder_name: str) -> tuple[str, Optional[str]]:
-        """
-        parses folder path into parent and subfolder components.
-
-        Args:
-            folder_name: folder path like "Folder" or "Parent/Child"
-
-        Returns:
-            tuple of (parent_folder, subfolder) where subfolder is None for flat paths
-        """
+        """parses folder path into (parent, subfolder) where subfolder is None for flat paths."""
         if "/" in folder_name:
             parts = folder_name.split("/", 1)
             return parts[0], parts[1]
         return folder_name, None
 
     def _get_author_label(self, message: Message) -> str:
-        """
-        returns friendly author label for message.
-
-        Args:
-            message: message to get label for
-
-        Returns:
-            'You' for user, 'ChatGPT' for assistant, 'Plugin (name)' for tools
-        """
+        """returns friendly author label: 'You', 'ChatGPT', or 'Plugin (name)'."""
         role = message.author.role
         if role == "assistant":
             return "ChatGPT"
@@ -70,19 +60,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         return role.capitalize()
 
     def _tool_message_has_visible_content(self, message: Message) -> bool:
-        """
-        checks if tool message has user-visible content.
-
-        Tool messages are only shown if they contain:
-        - multimodal_text (e.g., DALL-E generated images)
-        - execution_output with images in metadata.aggregate_result
-
-        Args:
-            message: tool message to check
-
-        Returns:
-            True if message should be shown, False otherwise
-        """
+        """checks if tool message has user-visible content (multimodal_text or images)."""
         content_type = message.content.get("content_type", "text")
 
         if content_type == "multimodal_text":
@@ -195,6 +173,20 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         # writes to file
         output_path.write_text(html_content, encoding="utf-8")
 
+    def _save_cc_copy(self, conversation: Conversation, html_content: str) -> None:
+        """saves a copy of HTML to cc_dir for debugging."""
+        if not self.cc_dir:
+            return
+
+        # generates filename from title
+        safe_title = re.sub(r"[^\w\s-]", "", conversation.title)
+        safe_title = re.sub(r"[-\s]+", "_", safe_title).strip("_")
+        filename = f"{safe_title or conversation.id}.html"
+
+        output_path = self.cc_dir / filename
+        self.cc_dir.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(html_content, encoding="utf-8")
+
     def _export_to_notes(
         self,
         conversation: Conversation,
@@ -230,6 +222,10 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         # collects images and generates HTML content
         image_files: list[str] = []
         html_content = self._generate_html_with_images(conversation, image_files)
+
+        # saves copy to cc_dir if configured
+        if self.cc_dir:
+            self._save_cc_copy(conversation, html_content)
 
         # uses AppleScript to create or update note
         self._write_to_apple_notes(
@@ -529,17 +525,14 @@ end tell
 
         renderer.renderToken = custom_render_token
 
-        # custom code block renderer: pre/code → div/tt
+        # custom code block renderer: uses <pre> to preserve whitespace
         def render_code_block(tokens: Any, idx: int, _options: Any, _env: Any) -> str:
             token = tokens[idx]
-            return f"<div><tt>{html_lib.escape(token.content)}</tt></div>\n"
-
-        def render_fence(tokens: Any, idx: int, _options: Any, _env: Any) -> str:
-            token = tokens[idx]
-            return f"<div><tt>{html_lib.escape(token.content)}</tt></div>\n"
+            escaped = html_lib.escape(token.content)
+            return f"<pre>{escaped}</pre>\n"
 
         renderer.rules["code_block"] = render_code_block
-        renderer.rules["fence"] = render_fence
+        renderer.rules["fence"] = render_code_block
 
         # custom image renderer: render images as inline img tags for Apple Notes
         def render_image(tokens: Any, idx: int, _options: Any, _env: Any) -> str:
@@ -667,7 +660,8 @@ end tell
     def _render_code_content(self, message: Message) -> str:
         """renders code content type as monospace block."""
         text = message.content.get("text", "")
-        return f"<div><tt>{html_lib.escape(text)}</tt></div>"
+        escaped = html_lib.escape(text)
+        return f"<pre>{escaped}</pre>"
 
     def _render_execution_output(self, message: Message) -> str:
         """renders execution_output content type (images from aggregate_result or text)."""
