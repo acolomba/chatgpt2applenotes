@@ -1043,3 +1043,57 @@ def test_export_uses_existing_noteinfo_for_update() -> None:
         # should delete by ID, not scan folder
         mock_delete.assert_called_once_with("x-coredata://existing")
         mock_write.assert_called_once()
+
+
+def test_export_uses_existing_noteinfo_for_append() -> None:
+    """tests export uses existing NoteInfo for append sync."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567890.0,
+        messages=[
+            Message(
+                id="msg-old",
+                author=Author(role="user"),
+                create_time=1234567890.0,
+                content={"content_type": "text", "parts": ["Old message"]},
+            ),
+            Message(
+                id="msg-new",
+                author=Author(role="assistant"),
+                create_time=1234567891.0,
+                content={"content_type": "text", "parts": ["New message"]},
+            ),
+        ],
+    )
+
+    existing = NoteInfo(
+        note_id="x-coredata://existing",
+        conversation_id="conv-123",
+        last_message_id="msg-old",  # last synced message
+    )
+
+    # mocks the applescript functions
+    with (
+        patch(
+            "chatgpt2applenotes.exporters.applescript.read_note_body_by_id",
+            return_value="<html>existing content</html>",
+        ) as mock_read,
+        patch(
+            "chatgpt2applenotes.exporters.applescript.append_to_note",
+            return_value=True,
+        ) as mock_append,
+    ):
+        exporter = AppleNotesExporter(target="notes")
+        exporter.export(
+            conversation=conversation,
+            destination="TestFolder",
+            overwrite=False,  # append mode
+            existing=existing,
+        )
+
+        # should read by ID, not scan folder
+        mock_read.assert_called_once_with("x-coredata://existing")
+        # should append new content
+        mock_append.assert_called_once()
