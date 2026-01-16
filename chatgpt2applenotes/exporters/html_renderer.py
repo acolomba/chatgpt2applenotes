@@ -155,3 +155,113 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
 
         # post-process: add spacing between top-level block elements
         return self._add_block_spacing(result)
+
+    def _render_multimodal_content(
+        self, content: dict[str, Any], escape_text: bool = False
+    ) -> str:
+        """renders multimodal content (text + images) to HTML."""
+        parts = content.get("parts") or []
+        html_parts = []
+
+        for part in parts:
+            if isinstance(part, str):
+                if escape_text:
+                    escaped = html_lib.escape(part)
+                    lines = escaped.split("\n")
+                    html_parts.append("<div>" + "</div>\n<div>".join(lines) + "</div>")
+                else:
+                    html_parts.append(self._markdown_to_apple_notes(part))
+            elif (
+                isinstance(part, dict)
+                and part.get("content_type") == "audio_transcription"
+            ):
+                html_parts.append(
+                    f'<div><i>"{html_lib.escape(part.get("text", ""))}"</i></div>'
+                )
+        return "".join(html_parts)
+
+    def _render_user_content(self, message: Message) -> str:
+        """
+        renders user message content (escaped HTML, no markdown).
+
+        Args:
+            message: user message to render
+
+        Returns:
+            HTML string
+        """
+        content_type = message.content.get("content_type", "text")
+
+        if content_type == "text":
+            parts = message.content.get("parts") or []
+            text = "\n".join(str(p) for p in parts if p)
+            escaped = html_lib.escape(text)
+            lines = escaped.split("\n")
+            return "<div>" + "</div>\n<div>".join(lines) + "</div>"
+
+        if content_type == "multimodal_text":
+            return self._render_multimodal_content(message.content, escape_text=True)
+
+        return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
+
+    def _render_text_content(self, message: Message) -> str:
+        """renders text content type as markdown."""
+        parts = message.content.get("parts") or []
+        text = "\n".join(str(p) for p in parts if p)
+        text = FOOTNOTE_PATTERN.sub("", text)  # removes citation marks
+        return self._markdown_to_apple_notes(text)
+
+    def _render_code_content(self, message: Message) -> str:
+        """renders code content type as monospace block."""
+        text = message.content.get("text", "")
+        escaped = html_lib.escape(text)
+        return f"<pre>{escaped}</pre>"
+
+    def _render_execution_output(self, message: Message) -> str:
+        """renders execution_output content type (images from aggregate_result or text)."""
+        metadata = message.metadata or {}
+        aggregate_result = metadata.get("aggregate_result", {})
+        messages = aggregate_result.get("messages", [])
+        image_messages = [m for m in messages if m.get("message_type") == "image"]
+
+        if image_messages:
+            parts = []
+            for img in image_messages:
+                url = img.get("image_url", "")
+                escaped_url = html_lib.escape(url)
+                parts.append(
+                    f'<div><img src="{escaped_url}" style="max-width: 100%;"></div>'
+                )
+            return "\n".join(parts)
+
+        text = message.content.get("text", "")
+        escaped = html_lib.escape(text)
+        return f"<div><tt>Result:\n{escaped}</tt></div>"
+
+    def _render_tether_quote(self, message: Message) -> str:
+        """renders tether_quote content type (quotes/citations from web browsing)."""
+        title = message.content.get("title", "")
+        text = message.content.get("text", "")
+        quote_text = title or text or ""
+        escaped = html_lib.escape(quote_text)
+        return f"<blockquote>{escaped}</blockquote>"
+
+    def _render_tether_browsing_display(self, message: Message) -> str:
+        """renders tether_browsing_display content type (browsing results with links)."""
+        metadata = message.metadata or {}
+        cite_metadata = metadata.get("_cite_metadata", {})
+        metadata_list = cite_metadata.get("metadata_list", [])
+
+        if not metadata_list:
+            return ""
+
+        parts = []
+        for item in metadata_list:
+            title = item.get("title", "")
+            url = item.get("url", "")
+            escaped_title = html_lib.escape(title)
+            escaped_url = html_lib.escape(url)
+            parts.append(
+                f'<blockquote><a href="{escaped_url}">{escaped_title}</a></blockquote>'
+            )
+        return "\n".join(parts)
