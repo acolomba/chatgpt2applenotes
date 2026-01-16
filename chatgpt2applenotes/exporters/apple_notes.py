@@ -42,6 +42,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         dry_run: bool = False,
         overwrite: bool = True,
         existing: Optional[NoteInfo] = None,
+        scanned: bool = False,
     ) -> None:
         """
         Export conversation to Apple Notes format.
@@ -52,10 +53,11 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             dry_run: if True, don't write files
             overwrite: if True, overwrite existing files/notes
             existing: optional NoteInfo for direct ID-based operations
+            scanned: if True, folder was already scanned (existing=None means no note exists)
         """
         if self.target == "notes":
             self._export_to_notes(
-                conversation, destination, dry_run, overwrite, existing
+                conversation, destination, dry_run, overwrite, existing, scanned
             )
         else:
             self._export_to_file(conversation, destination, dry_run, overwrite)
@@ -114,18 +116,26 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         dry_run: bool,
         overwrite: bool,
         existing: Optional[NoteInfo] = None,
+        scanned: bool = False,
     ) -> None:
         """exports conversation directly to Apple Notes."""
         if dry_run:
             print(f"Would write note '{conversation.title}' to folder '{folder_name}'")
             return
 
-        # uses existing NoteInfo if provided, otherwise scan for note
+        # determines existing note state
         last_synced: Optional[str]
+        existing_body: Optional[str]
         if existing:
+            # note found in scan - read by ID
             existing_body = applescript.read_note_body_by_id(existing.note_id)
             last_synced = existing.last_message_id
+        elif scanned:
+            # folder was scanned but note not found - no need to scan again
+            existing_body = None
+            last_synced = None
         else:
+            # backwards compatibility: no scan was done, search for note
             existing_body = self.read_note_body(folder_name, conversation.id)
             last_synced = (
                 self.extract_last_synced_id(existing_body) if existing_body else None

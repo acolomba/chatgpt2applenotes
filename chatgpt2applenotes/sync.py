@@ -155,6 +155,7 @@ def _process_file(
         dry_run=dry_run,
         overwrite=overwrite,
         existing=existing,
+        scanned=not dry_run,  # we scanned the folder unless in dry_run mode
     )
 
     return conversation.id
