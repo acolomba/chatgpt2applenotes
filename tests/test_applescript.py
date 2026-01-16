@@ -1,6 +1,9 @@
 """tests for AppleScript module."""
 
-from chatgpt2applenotes.exporters.applescript import NoteInfo
+import subprocess
+from unittest.mock import MagicMock, patch
+
+from chatgpt2applenotes.exporters.applescript import NoteInfo, list_note_ids
 
 
 def test_noteinfo_creation() -> None:
@@ -13,3 +16,36 @@ def test_noteinfo_creation() -> None:
     assert info.note_id == "x-coredata://123"
     assert info.conversation_id == "conv-uuid-1"
     assert info.last_message_id == "msg-uuid-a"
+
+
+def test_list_note_ids_returns_ids() -> None:
+    """tests list_note_ids parses AppleScript output."""
+    mock_result = MagicMock()
+    mock_result.stdout = "x-coredata://id1\nx-coredata://id2\nx-coredata://id3\n"
+
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        result = list_note_ids("TestFolder")
+
+    assert result == ["x-coredata://id1", "x-coredata://id2", "x-coredata://id3"]
+    mock_run.assert_called_once()
+
+
+def test_list_note_ids_returns_empty_on_error() -> None:
+    """tests list_note_ids returns empty list on AppleScript error."""
+    with patch(
+        "subprocess.run", side_effect=subprocess.CalledProcessError(1, "osascript")
+    ):
+        result = list_note_ids("TestFolder")
+
+    assert result == []
+
+
+def test_list_note_ids_returns_empty_for_empty_folder() -> None:
+    """tests list_note_ids returns empty list for empty folder."""
+    mock_result = MagicMock()
+    mock_result.stdout = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        result = list_note_ids("TestFolder")
+
+    assert result == []

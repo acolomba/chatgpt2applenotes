@@ -77,6 +77,47 @@ def get_folder_create_script(folder_name: str) -> str:
     end if"""
 
 
+def list_note_ids(folder: str) -> list[str]:
+    """
+    lists all note IDs in folder.
+
+    Args:
+        folder: Apple Notes folder name (supports "Parent/Child" format)
+
+    Returns:
+        list of note IDs (x-coredata://... format)
+    """
+    folder_ref = get_folder_ref(folder)
+
+    applescript = f"""
+tell application "Notes"
+    if not (exists {folder_ref}) then
+        return ""
+    end if
+
+    set notesList to every note of {folder_ref}
+    set result to ""
+    repeat with aNote in notesList
+        set result to result & (id of aNote) & linefeed
+    end repeat
+    return result
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout.strip()
+        if not output:
+            return []
+        return [line for line in output.split("\n") if line]
+    except subprocess.CalledProcessError:
+        return []
+
+
 def read_note_body(folder: str, conversation_id: str) -> Optional[str]:
     """
     reads note body from Apple Notes by conversation ID.
