@@ -1,5 +1,7 @@
 """Apple Notes exporter for ChatGPT conversations."""
 
+# pylint: disable=too-many-lines  # re-enable after refactoring module size
+
 import base64
 import html as html_lib
 import re
@@ -20,6 +22,14 @@ LATEX_PATTERN = re.compile(
     re.MULTILINE,
 )
 FOOTNOTE_PATTERN = re.compile(r"【\d+†\([^)]+\)】")
+# block spacing post-processing patterns
+_EMPTY_DIV_PATTERN = re.compile(
+    r"(<(?:li|blockquote)[^>]*>)\s*<div>(?:<br\s*/?>|\s)*</div>\s*", re.I
+)
+_BLOCK_SPACING_PATTERN = re.compile(
+    r"(</(?:div|ul|ol|blockquote|pre|table|h[1-6])>)\s*(<(?:div|ul|ol|blockquote|pre|table|h[1-6])[\s>])",
+    re.I,
+)
 
 
 class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
@@ -514,12 +524,6 @@ end tell
             # inline code: code → tt
             elif token.tag == "code":
                 token.tag = "tt"
-            # headers: add br before and after
-            elif token.tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
-                if token.nesting == 1:  # opening tag
-                    return f"<br>\n{original_render_token(tokens, idx, options, env)}"
-                if token.nesting == -1:  # closing tag
-                    return f"{original_render_token(tokens, idx, options, env)}\n<br>"
 
             return cast(str, original_render_token(tokens, idx, options, env))
 
@@ -545,7 +549,16 @@ end tell
         renderer.rules["image"] = render_image
 
         result = cast(str, md.render(protected_text))
-        return self._restore_latex(result, latex_matches) if latex_matches else result
+        result = self._restore_latex(result, latex_matches) if latex_matches else result
+        return self._add_block_spacing(result)  # post-process: add block spacing
+
+    def _add_block_spacing(self, html: str) -> str:
+        """adds <div><br></div> between adjacent block elements at top level."""
+        html = _EMPTY_DIV_PATTERN.sub(r"\1\n", html)
+        marker, prev = "\x00S\x00", ""
+        while prev != html:
+            prev, html = html, _BLOCK_SPACING_PATTERN.sub(rf"\1\n{marker}\n\2", html)
+        return html.replace(marker, "<div><br></div>")
 
     def _convert_image_to_png_data_url(self, data_url: str) -> str:
         """converts image data URL to PNG format for Apple Notes compatibility."""
