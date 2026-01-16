@@ -41,6 +41,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         destination: str,
         dry_run: bool = False,
         overwrite: bool = True,
+        existing: Optional[NoteInfo] = None,
     ) -> None:
         """
         Export conversation to Apple Notes format.
@@ -50,9 +51,12 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             destination: output directory path (folder name for notes target)
             dry_run: if True, don't write files
             overwrite: if True, overwrite existing files/notes
+            existing: optional NoteInfo for direct ID-based operations
         """
         if self.target == "notes":
-            self._export_to_notes(conversation, destination, dry_run, overwrite)
+            self._export_to_notes(
+                conversation, destination, dry_run, overwrite, existing
+            )
         else:
             self._export_to_file(conversation, destination, dry_run, overwrite)
 
@@ -109,18 +113,26 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         folder_name: str,
         dry_run: bool,
         overwrite: bool,
+        existing: Optional[NoteInfo] = None,
     ) -> None:
         """exports conversation directly to Apple Notes."""
         if dry_run:
             print(f"Would write note '{conversation.title}' to folder '{folder_name}'")
             return
 
-        # checks for existing note
-        existing_body = self.read_note_body(folder_name, conversation.id)
+        # uses existing NoteInfo if provided, otherwise scan for note
+        last_synced: Optional[str]
+        if existing:
+            existing_body = applescript.read_note_body_by_id(existing.note_id)
+            last_synced = existing.last_message_id
+        else:
+            existing_body = self.read_note_body(folder_name, conversation.id)
+            last_synced = (
+                self.extract_last_synced_id(existing_body) if existing_body else None
+            )
 
         if existing_body and not overwrite:
             # tries append-only sync
-            last_synced = self.extract_last_synced_id(existing_body)
             if last_synced:
                 # finds new messages and appends
                 append_html = self.generate_append_html(conversation, last_synced)
@@ -143,9 +155,17 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         if self.cc_dir:
             self._save_cc_copy(conversation, html_content)
 
-        # uses AppleScript to create or update note
+        # deletes existing note by ID if we have it
+        if existing and overwrite:
+            applescript.delete_note_by_id(existing.note_id)
+
+        # uses AppleScript to create note (always create new after delete)
         self._write_to_apple_notes(
-            conversation, html_content, folder_name, overwrite, image_files
+            conversation,
+            html_content,
+            folder_name,
+            overwrite and not existing,
+            image_files,
         )
 
     def _write_to_apple_notes(

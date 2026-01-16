@@ -1,5 +1,7 @@
 """Tests for Apple Notes exporter."""
 
+# pylint: disable=too-many-lines
+
 import json
 import os
 import subprocess
@@ -11,6 +13,7 @@ import pytest
 from chatgpt2applenotes.core.models import Author, Conversation, Message
 from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
+from chatgpt2applenotes.exporters.applescript import NoteInfo
 
 TEST_DATA_DIR = os.getenv(
     "CHATGPT_TEST_DATA_DIR",
@@ -993,3 +996,50 @@ def test_move_note_to_archive_by_id_delegates_to_applescript() -> None:
 
     mock_move.assert_called_once_with("x-coredata://123", "TestFolder")
     assert result is True
+
+
+def test_export_uses_existing_noteinfo_for_update() -> None:
+    """tests export uses existing NoteInfo to skip folder scan."""
+    # creates a conversation
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567890.0,
+        messages=[
+            Message(
+                id="msg-new",
+                author=Author(role="user"),
+                create_time=1234567891.0,
+                content={"content_type": "text", "parts": ["New message"]},
+            )
+        ],
+    )
+
+    existing = NoteInfo(
+        note_id="x-coredata://existing",
+        conversation_id="conv-123",
+        last_message_id="msg-old",
+    )
+
+    # mocks the applescript functions
+    with (
+        patch(
+            "chatgpt2applenotes.exporters.applescript.delete_note_by_id",
+            return_value=True,
+        ) as mock_delete,
+        patch(
+            "chatgpt2applenotes.exporters.applescript.write_note",
+        ) as mock_write,
+    ):
+        exporter = AppleNotesExporter(target="notes")
+        exporter.export(
+            conversation=conversation,
+            destination="TestFolder",
+            overwrite=True,
+            existing=existing,
+        )
+
+        # should delete by ID, not scan folder
+        mock_delete.assert_called_once_with("x-coredata://existing")
+        mock_write.assert_called_once()
