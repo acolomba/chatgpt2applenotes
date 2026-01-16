@@ -965,3 +965,17 @@ def test_filters_tool_messages_without_visible_content(tmp_path: Path) -> None:
     assert "Here is your image" in html
     # tool with plain text should be filtered
     assert "Browsing results..." not in html
+
+
+def test_scan_folder_notes_delegates_to_applescript() -> None:
+    """tests scan_folder_notes calls applescript.scan_folder_notes."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.applescript.scan_folder_notes",
+        return_value={"conv-1": MagicMock()},
+    ) as mock_scan:
+        result = exporter.scan_folder_notes("TestFolder")
+
+    mock_scan.assert_called_once_with("TestFolder")
+    assert "conv-1" in result

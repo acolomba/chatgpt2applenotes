@@ -11,6 +11,7 @@ from PIL import Image
 
 from chatgpt2applenotes.core.models import Conversation
 from chatgpt2applenotes.exporters import applescript
+from chatgpt2applenotes.exporters.applescript import NoteInfo
 from chatgpt2applenotes.exporters.base import Exporter
 from chatgpt2applenotes.exporters.html_renderer import AppleNotesRenderer
 
@@ -254,3 +255,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
     def move_note_to_archive(self, folder: str, conversation_id: str) -> bool:
         """moves note to Archive subfolder."""
         return applescript.move_note_to_archive(folder, conversation_id)
+
+    def scan_folder_notes(self, folder: str) -> dict[str, NoteInfo]:
+        """scans folder and builds conversation_id -> NoteInfo index."""
+        return applescript.scan_folder_notes(folder)
