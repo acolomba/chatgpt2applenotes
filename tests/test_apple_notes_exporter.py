@@ -488,7 +488,7 @@ def test_read_note_body_returns_body_on_success() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = "<html><body>Note content</body></html>"
@@ -505,7 +505,7 @@ def test_read_note_body_returns_none_on_error() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_subprocess.CalledProcessError = subprocess.CalledProcessError
         mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
@@ -520,7 +520,7 @@ def test_read_note_body_returns_none_on_empty_result() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = ""
@@ -600,7 +600,7 @@ def test_append_to_note_returns_true_on_success() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = "true"
@@ -617,7 +617,7 @@ def test_append_to_note_returns_false_on_error() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_subprocess.CalledProcessError = subprocess.CalledProcessError
         mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
@@ -632,7 +632,7 @@ def test_append_to_note_returns_false_when_not_found() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = "false"
@@ -664,7 +664,7 @@ def test_list_note_conversation_ids_returns_empty_on_error() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_subprocess.CalledProcessError = subprocess.CalledProcessError
         mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
@@ -679,7 +679,7 @@ def test_list_note_conversation_ids_returns_empty_on_empty_output() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = ""
@@ -702,7 +702,7 @@ def test_list_note_conversation_ids_extracts_ids() -> None:
     mock_output = f"{note_body}|||SEPARATOR|||"
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = mock_output
@@ -718,7 +718,7 @@ def test_move_note_to_archive_returns_true_on_success() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = "true"
@@ -735,7 +735,7 @@ def test_move_note_to_archive_returns_false_on_error() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_subprocess.CalledProcessError = subprocess.CalledProcessError
         mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "osascript")
@@ -750,7 +750,7 @@ def test_move_note_to_archive_returns_false_when_not_found() -> None:
     exporter = AppleNotesExporter(target="notes")
 
     with patch(
-        "chatgpt2applenotes.exporters.apple_notes.subprocess"
+        "chatgpt2applenotes.exporters.applescript.subprocess"
     ) as mock_subprocess:
         mock_result = MagicMock()
         mock_result.stdout = "false"
