@@ -153,6 +153,36 @@ end tell
         return None
 
 
+def scan_folder_notes(folder: str) -> dict[str, NoteInfo]:
+    """
+    scans folder and builds conversation_id -> NoteInfo index.
+
+    Args:
+        folder: Apple Notes folder name (supports "Parent/Child" format)
+
+    Returns:
+        dict mapping conversation_id to NoteInfo
+    """
+    note_ids = list_note_ids(folder)
+    index: dict[str, NoteInfo] = {}
+
+    for note_id in note_ids:
+        body = read_note_body_by_id(note_id)
+        if body:
+            # extracts conversation_id:last_message_id from footer
+            match = re.search(
+                r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}):"
+                r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})",
+                body,
+            )
+            if match:
+                conv_id = match.group(1)
+                msg_id = match.group(2)
+                index[conv_id] = NoteInfo(note_id, conv_id, msg_id)
+
+    return index
+
+
 def read_note_body(folder: str, conversation_id: str) -> Optional[str]:
     """
     reads note body from Apple Notes by conversation ID.

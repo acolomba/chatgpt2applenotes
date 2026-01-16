@@ -7,6 +7,7 @@ from chatgpt2applenotes.exporters.applescript import (
     NoteInfo,
     list_note_ids,
     read_note_body_by_id,
+    scan_folder_notes,
 )
 
 
@@ -86,3 +87,80 @@ def test_read_note_body_by_id_returns_none_for_empty() -> None:
         result = read_note_body_by_id("x-coredata://123")
 
     assert result is None
+
+
+def test_scan_folder_notes_builds_index() -> None:
+    """tests scan_folder_notes builds conversation_id -> NoteInfo index."""
+    # uses proper UUID format for matching regex
+    body1 = (
+        '<html>Content 1<p style="color:gray">'
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890:11111111-2222-3333-4444-555555555555"
+        "</p></html>"
+    )
+    body2 = (
+        '<html>Content 2<p style="color:gray">'
+        "b2c3d4e5-f6a7-8901-bcde-f12345678901:22222222-3333-4444-5555-666666666666"
+        "</p></html>"
+    )
+
+    with (
+        patch(
+            "chatgpt2applenotes.exporters.applescript.list_note_ids",
+            return_value=["x-coredata://id1", "x-coredata://id2"],
+        ),
+        patch(
+            "chatgpt2applenotes.exporters.applescript.read_note_body_by_id",
+            side_effect=[body1, body2],
+        ),
+    ):
+        result = scan_folder_notes("TestFolder")
+
+    assert len(result) == 2
+    assert "a1b2c3d4-e5f6-7890-abcd-ef1234567890" in result
+    assert "b2c3d4e5-f6a7-8901-bcde-f12345678901" in result
+    assert result["a1b2c3d4-e5f6-7890-abcd-ef1234567890"].note_id == "x-coredata://id1"
+    assert (
+        result["a1b2c3d4-e5f6-7890-abcd-ef1234567890"].last_message_id
+        == "11111111-2222-3333-4444-555555555555"
+    )
+    assert result["b2c3d4e5-f6a7-8901-bcde-f12345678901"].note_id == "x-coredata://id2"
+    assert (
+        result["b2c3d4e5-f6a7-8901-bcde-f12345678901"].last_message_id
+        == "22222222-3333-4444-5555-666666666666"
+    )
+
+
+def test_scan_folder_notes_skips_notes_without_footer() -> None:
+    """tests scan_folder_notes skips notes without valid footer."""
+    body1 = "<html>Content without footer</html>"
+    body2 = (
+        '<html>Content 2<p style="color:gray">'
+        "b2c3d4e5-f6a7-8901-bcde-f12345678901:22222222-3333-4444-5555-666666666666"
+        "</p></html>"
+    )
+
+    with (
+        patch(
+            "chatgpt2applenotes.exporters.applescript.list_note_ids",
+            return_value=["x-coredata://id1", "x-coredata://id2"],
+        ),
+        patch(
+            "chatgpt2applenotes.exporters.applescript.read_note_body_by_id",
+            side_effect=[body1, body2],
+        ),
+    ):
+        result = scan_folder_notes("TestFolder")
+
+    assert len(result) == 1
+    assert "b2c3d4e5-f6a7-8901-bcde-f12345678901" in result
+
+
+def test_scan_folder_notes_returns_empty_for_empty_folder() -> None:
+    """tests scan_folder_notes returns empty dict for empty folder."""
+    with patch(
+        "chatgpt2applenotes.exporters.applescript.list_note_ids",
+        return_value=[],
+    ):
+        result = scan_folder_notes("TestFolder")
+
+    assert not result
