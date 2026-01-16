@@ -2,6 +2,8 @@
 
 import re
 import subprocess
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 
@@ -206,3 +208,60 @@ end tell
         return result.stdout.strip() == "true"
     except subprocess.CalledProcessError:
         return False
+
+
+def append_to_note(folder: str, conversation_id: str, html_content: str) -> bool:
+    """
+    appends HTML content to existing note.
+
+    Args:
+        folder: Apple Notes folder name (supports "Parent/Child" format)
+        conversation_id: conversation ID to find
+        html_content: HTML to append
+
+    Returns:
+        True if successful, False otherwise
+    """
+    folder_ref = get_folder_ref(folder)
+    id_escaped = _escape_applescript(conversation_id)
+
+    # writes HTML to temp file
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".html", delete=False, encoding="utf-8"
+    ) as html_file:
+        html_file.write(html_content)
+        html_path = html_file.name
+
+    html_path_escaped = _escape_applescript(html_path)
+
+    applescript = f"""
+tell application "Notes"
+    if not (exists {folder_ref}) then
+        return false
+    end if
+
+    set htmlContent to read POSIX file "{html_path_escaped}" as «class utf8»
+
+    set notesList to every note of {folder_ref}
+    repeat with aNote in notesList
+        if body of aNote contains "{id_escaped}" then
+            set oldBody to body of aNote
+            set body of aNote to oldBody & htmlContent
+            return true
+        end if
+    end repeat
+    return false
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() == "true"
+    except subprocess.CalledProcessError:
+        return False
+    finally:
+        Path(html_path).unlink(missing_ok=True)
