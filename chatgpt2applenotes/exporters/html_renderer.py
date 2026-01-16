@@ -2,7 +2,7 @@
 
 import html as html_lib
 import re
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from markdown_it import MarkdownIt
 
@@ -265,3 +265,26 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
                 f'<blockquote><a href="{escaped_url}">{escaped_title}</a></blockquote>'
             )
         return "\n".join(parts)
+
+    def _render_message_content(self, message: Message) -> str:
+        """renders message content to Apple Notes HTML."""
+        # user messages: escape HTML but don't process markdown
+        if message.author.role == "user":
+            return self._render_user_content(message)
+
+        content_type = message.content.get("content_type", "text")
+
+        # dispatch table for assistant/tool messages
+        renderers: dict[str, Callable[[], str]] = {
+            "text": lambda: self._render_text_content(message),
+            "multimodal_text": lambda: self._render_multimodal_content(message.content),
+            "code": lambda: self._render_code_content(message),
+            "execution_output": lambda: self._render_execution_output(message),
+            "tether_quote": lambda: self._render_tether_quote(message),
+            "tether_browsing_display": lambda: self._render_tether_browsing_display(
+                message
+            ),
+        }
+
+        renderer = renderers.get(content_type)
+        return renderer() if renderer else "[Unsupported content type]"
