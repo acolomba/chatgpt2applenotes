@@ -2,11 +2,11 @@
 
 import html as html_lib
 import re
-from typing import Any, Callable, cast
+from typing import Any, Callable, Optional, cast
 
 from markdown_it import MarkdownIt
 
-from chatgpt2applenotes.core.models import Message
+from chatgpt2applenotes.core.models import Conversation, Message
 
 LATEX_PATTERN = re.compile(
     r"(\$\$[\s\S]+?\$\$)|(\$[^\$\n]+?\$)|(\\\[[\s\S]+?\\\])|(\\\([\s\S]+?\\\))",
@@ -288,3 +288,149 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
 
         renderer = renderers.get(content_type)
         return renderer() if renderer else "[Unsupported content type]"
+
+    def render_conversation(
+        self, conversation: Conversation, wrap_html: bool = False
+    ) -> str:
+        """
+        generates Apple Notes HTML for conversation.
+
+        Args:
+            conversation: conversation to render
+            wrap_html: if True, wrap in html/body tags (for file export)
+
+        Returns:
+            HTML string
+        """
+        parts = []
+
+        # conversation title
+        parts.append(f"<div><h1>{html_lib.escape(conversation.title)}</h1></div>")
+        parts.append("<div><br></div>")
+
+        # renders messages
+        for message in conversation.messages:
+            # skips metadata messages with no user-facing content
+            content_type = message.content.get("content_type", "text")
+            if content_type == "model_editable_context":
+                continue
+
+            # skips messages not addressed to all (internal tool communications)
+            recipient = (
+                message.metadata.get("recipient", "all") if message.metadata else "all"
+            )
+            if recipient != "all":
+                continue
+
+            # skips tool messages without visible content
+            if (
+                message.author.role == "tool"
+                and not self._tool_message_has_visible_content(message)
+            ):
+                continue
+
+            # author heading
+            author_label = self._get_author_label(message)
+            parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
+            parts.append("<div><br></div>")
+
+            # message content
+            content = self._render_message_content(message)
+            parts.append(content)
+            parts.append("<div><br></div>")
+
+        # adds footer with conversation ID and last message ID
+        if conversation.messages:
+            last_msg_id = conversation.messages[-1].id
+            parts.append(
+                f'<div style="font-size: x-small; color: gray;">'
+                f"{html_lib.escape(conversation.id)}:{html_lib.escape(last_msg_id)}</div>"
+            )
+
+        body = "".join(parts)
+
+        # wraps in html/body tags for file target
+        if wrap_html:
+            return f"<html><body>{body}</body></html>"
+        return body
+
+    def render_append(self, conversation: Conversation, after_message_id: str) -> str:
+        """
+        generates HTML for messages after the given message ID.
+
+        Args:
+            conversation: conversation with all messages
+            after_message_id: only include messages after this ID
+
+        Returns:
+            HTML string with new messages and updated sync marker
+        """
+        # finds index of last synced message
+        start_idx = 0
+        for i, msg in enumerate(conversation.messages):
+            if msg.id == after_message_id:
+                start_idx = i + 1
+                break
+
+        new_messages = conversation.messages[start_idx:]
+        if not new_messages:
+            return ""
+
+        parts = []
+        for message in new_messages:
+            content_type = message.content.get("content_type", "text")
+            if content_type == "model_editable_context":
+                continue
+
+            # skips messages not addressed to all (internal tool communications)
+            recipient = (
+                message.metadata.get("recipient", "all") if message.metadata else "all"
+            )
+            if recipient != "all":
+                continue
+
+            # skips tool messages without visible content
+            if (
+                message.author.role == "tool"
+                and not self._tool_message_has_visible_content(message)
+            ):
+                continue
+
+            # author heading
+            author_label = self._get_author_label(message)
+            parts.append(f"<div><h2>{html_lib.escape(author_label)}</h2></div>")
+            parts.append("<div><br></div>")
+
+            # message content
+            content = self._render_message_content(message)
+            parts.append(content)
+            parts.append("<div><br></div>")
+
+        # adds footer with conversation ID and new last message ID
+        last_msg_id = new_messages[-1].id
+        parts.append(
+            f'<div style="font-size: x-small; color: gray;">'
+            f"{html_lib.escape(conversation.id)}:{html_lib.escape(last_msg_id)}</div>"
+        )
+
+        return "".join(parts)
+
+    def extract_last_synced_id(self, html: str) -> Optional[str]:
+        """
+        extracts last-synced message ID from note footer.
+
+        Args:
+            html: note body HTML
+
+        Returns:
+            message ID if found, None otherwise
+        """
+        # matches footer format: {conversation_id}:{message_id}
+        # conversation ID is UUID, message ID can be various formats
+        match = re.search(
+            r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:([^\s<]+)",
+            html,
+        )
+        if match:
+            return match.group(1)
+        return None
