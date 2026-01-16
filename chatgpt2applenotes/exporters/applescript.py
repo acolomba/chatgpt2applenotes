@@ -118,6 +118,40 @@ end tell
         return []
 
 
+def delete_note_by_id(note_id: str) -> bool:
+    """
+    deletes note by direct ID lookup.
+
+    Args:
+        note_id: Apple Notes internal ID (x-coredata://... format)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    id_escaped = _escape_applescript(note_id)
+
+    applescript = f"""
+tell application "Notes"
+    try
+        delete note id "{id_escaped}"
+        return true
+    on error
+        return false
+    end try
+end tell
+"""
+    try:
+        subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def read_note_body_by_id(note_id: str) -> Optional[str]:
     """
     reads note body by direct ID lookup.

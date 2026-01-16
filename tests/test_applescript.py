@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from chatgpt2applenotes.exporters.applescript import (
     NoteInfo,
+    delete_note_by_id,
     list_note_ids,
     read_note_body_by_id,
     scan_folder_notes,
@@ -164,3 +165,24 @@ def test_scan_folder_notes_returns_empty_for_empty_folder() -> None:
         result = scan_folder_notes("TestFolder")
 
     assert not result
+
+
+def test_delete_note_by_id_returns_true_on_success() -> None:
+    """tests delete_note_by_id returns True on success."""
+    mock_result = MagicMock()
+    mock_result.stdout = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        result = delete_note_by_id("x-coredata://123")
+
+    assert result is True
+
+
+def test_delete_note_by_id_returns_false_on_error() -> None:
+    """tests delete_note_by_id returns False on error."""
+    with patch(
+        "subprocess.run", side_effect=subprocess.CalledProcessError(1, "osascript")
+    ):
+        result = delete_note_by_id("x-coredata://123")
+
+    assert result is False
