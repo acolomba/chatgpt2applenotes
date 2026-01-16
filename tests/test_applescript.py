@@ -3,7 +3,11 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from chatgpt2applenotes.exporters.applescript import NoteInfo, list_note_ids
+from chatgpt2applenotes.exporters.applescript import (
+    NoteInfo,
+    list_note_ids,
+    read_note_body_by_id,
+)
 
 
 def test_noteinfo_creation() -> None:
@@ -49,3 +53,36 @@ def test_list_note_ids_returns_empty_for_empty_folder() -> None:
         result = list_note_ids("TestFolder")
 
     assert result == []
+
+
+def test_read_note_body_by_id_returns_body() -> None:
+    """tests read_note_body_by_id returns note body."""
+    mock_result = MagicMock()
+    mock_result.stdout = "<html><body>Note content</body></html>"
+
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        result = read_note_body_by_id("x-coredata://123")
+
+    assert result == "<html><body>Note content</body></html>"
+    mock_run.assert_called_once()
+
+
+def test_read_note_body_by_id_returns_none_on_error() -> None:
+    """tests read_note_body_by_id returns None on error."""
+    with patch(
+        "subprocess.run", side_effect=subprocess.CalledProcessError(1, "osascript")
+    ):
+        result = read_note_body_by_id("x-coredata://123")
+
+    assert result is None
+
+
+def test_read_note_body_by_id_returns_none_for_empty() -> None:
+    """tests read_note_body_by_id returns None for empty body."""
+    mock_result = MagicMock()
+    mock_result.stdout = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        result = read_note_body_by_id("x-coredata://123")
+
+    assert result is None

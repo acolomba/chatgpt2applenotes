@@ -118,6 +118,41 @@ end tell
         return []
 
 
+def read_note_body_by_id(note_id: str) -> Optional[str]:
+    """
+    reads note body by direct ID lookup.
+
+    Args:
+        note_id: Apple Notes internal ID (x-coredata://... format)
+
+    Returns:
+        note body HTML if found, None otherwise
+    """
+    id_escaped = _escape_applescript(note_id)
+
+    applescript = f"""
+tell application "Notes"
+    try
+        set theNote to note id "{id_escaped}"
+        return body of theNote
+    on error
+        return ""
+    end try
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        body = result.stdout.strip()
+        return body if body else None
+    except subprocess.CalledProcessError:
+        return None
+
+
 def read_note_body(folder: str, conversation_id: str) -> Optional[str]:
     """
     reads note body from Apple Notes by conversation ID.
