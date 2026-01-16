@@ -212,14 +212,16 @@ class TestAppleNotesE2E:
 
     def test_archive_deleted(self, tmp_path: Path, test_folder: str) -> None:
         """--archive-deleted moves orphaned notes to Archive."""
-        # uses UUID format to match list_note_conversation_ids regex pattern
+        # uses UUID format to match scan_folder_notes regex pattern
         conv_id_keep = str(uuid.uuid4())
         conv_id_delete = str(uuid.uuid4())
+        msg_id_keep = str(uuid.uuid4())
+        msg_id_delete = str(uuid.uuid4())
 
         # creates two notes
-        for conv_id, title in [
-            (conv_id_keep, "Keep"),
-            (conv_id_delete, "Delete"),
+        for conv_id, msg_id, title in [
+            (conv_id_keep, msg_id_keep, "Keep"),
+            (conv_id_delete, msg_id_delete, "Delete"),
         ]:
             conv = {
                 "id": conv_id,
@@ -229,7 +231,7 @@ class TestAppleNotesE2E:
                 "mapping": {
                     "msg1": {
                         "message": {
-                            "id": "msg-1",
+                            "id": msg_id,
                             "author": {"role": "user"},
                             "create_time": 1234567890.0,
                             "content": {"content_type": "text", "parts": ["Test"]},
@@ -250,7 +252,7 @@ class TestAppleNotesE2E:
             "mapping": {
                 "msg1": {
                     "message": {
-                        "id": "msg-1",
+                        "id": msg_id_keep,
                         "author": {"role": "user"},
                         "create_time": 1234567890.0,
                         "content": {"content_type": "text", "parts": ["Test"]},

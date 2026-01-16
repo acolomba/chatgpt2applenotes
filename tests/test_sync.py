@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from chatgpt2applenotes.exporters.applescript import NoteInfo
 from chatgpt2applenotes.sync import discover_files, sync_conversations
 
 
@@ -139,7 +140,7 @@ def test_sync_prints_summary(tmp_path: Path) -> None:
 
 
 def test_archive_deleted_calls_exporter_methods(tmp_path: Path) -> None:
-    """archive_deleted uses exporter to list and move notes."""
+    """archive_deleted uses exporter to move notes by ID from index."""
     conv = {
         "id": "conv-keep",
         "title": "Keep",
@@ -149,18 +150,83 @@ def test_archive_deleted_calls_exporter_methods(tmp_path: Path) -> None:
     }
     (tmp_path / "keep.json").write_text(json.dumps(conv), encoding="utf-8")
 
+    # simulates note index with existing notes including one not in source
+    note_to_delete = NoteInfo(
+        note_id="x-coredata://delete",
+        conversation_id="conv-delete",
+        last_message_id="msg-1",
+    )
+    note_to_keep = NoteInfo(
+        note_id="x-coredata://keep",
+        conversation_id="conv-keep",
+        last_message_id="msg-2",
+    )
+
     with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
         mock_exporter = MagicMock()
         mock_exporter_class.return_value = mock_exporter
-        # simulates existing notes including one not in source
-        mock_exporter.list_note_conversation_ids.return_value = [
-            "conv-keep",
-            "conv-delete",
-        ]
+        mock_exporter.scan_folder_notes.return_value = {
+            "conv-keep": note_to_keep,
+            "conv-delete": note_to_delete,
+        }
 
         sync_conversations(tmp_path, "TestFolder", archive_deleted=True)
 
-    # should have called move for the deleted conversation
-    mock_exporter.move_note_to_archive.assert_called_once_with(
-        "TestFolder", "conv-delete"
+    # should have called move_note_to_archive_by_id for the deleted conversation
+    mock_exporter.move_note_to_archive_by_id.assert_called_once_with(
+        "x-coredata://delete", "TestFolder"
     )
+
+
+def test_sync_scans_folder_once(tmp_path: Path) -> None:
+    """tests sync_conversations scans folder once upfront."""
+    # creates test JSON file
+    json_file = tmp_path / "conv1.json"
+    json_file.write_text(
+        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, '
+        '"mapping": {"node1": {"message": {"id": "msg-1", "author": {"role": "user"}, '
+        '"create_time": 1234567890, "content": {"content_type": "text", "parts": ["Hi"]}}}}}'
+    )
+
+    with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
+        mock_exporter = MagicMock()
+        mock_exporter_class.return_value = mock_exporter
+        mock_exporter.scan_folder_notes.return_value = {}
+
+        sync_conversations(tmp_path, "TestFolder")
+
+        # scan_folder_notes should be called exactly once
+        mock_exporter.scan_folder_notes.assert_called_once_with("TestFolder")
+        # export should be called with existing=None (no existing note)
+        mock_exporter.export.assert_called_once()
+        call_kwargs = mock_exporter.export.call_args.kwargs
+        assert call_kwargs.get("existing") is None
+
+
+def test_sync_passes_existing_noteinfo_to_export(tmp_path: Path) -> None:
+    """tests sync_conversations passes existing NoteInfo to export."""
+    # creates test JSON file
+    json_file = tmp_path / "conv1.json"
+    json_file.write_text(
+        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, '
+        '"mapping": {"node1": {"message": {"id": "msg-1", "author": {"role": "user"}, '
+        '"create_time": 1234567890, "content": {"content_type": "text", "parts": ["Hi"]}}}}}'
+    )
+
+    existing_note = NoteInfo(
+        note_id="x-coredata://existing",
+        conversation_id="conv-1",
+        last_message_id="msg-old",
+    )
+
+    with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
+        mock_exporter = MagicMock()
+        mock_exporter_class.return_value = mock_exporter
+        mock_exporter.scan_folder_notes.return_value = {"conv-1": existing_note}
+
+        sync_conversations(tmp_path, "TestFolder")
+
+        # export should be called with existing NoteInfo
+        mock_exporter.export.assert_called_once()
+        call_kwargs = mock_exporter.export.call_args.kwargs
+        assert call_kwargs.get("existing") == existing_note
