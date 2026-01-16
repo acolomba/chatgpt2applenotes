@@ -3,8 +3,18 @@
 import re
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+
+@dataclass
+class NoteInfo:
+    """metadata for an existing Apple Note."""
+
+    note_id: str
+    conversation_id: str
+    last_message_id: str
 
 
 def _parse_folder_path(folder_name: str) -> tuple[str, Optional[str]]:
