@@ -22,14 +22,6 @@ LATEX_PATTERN = re.compile(
     re.MULTILINE,
 )
 FOOTNOTE_PATTERN = re.compile(r"【\d+†\([^)]+\)】")
-# block spacing post-processing patterns
-_EMPTY_DIV_PATTERN = re.compile(
-    r"(<(?:li|blockquote)[^>]*>)\s*<div>(?:<br\s*/?>|\s)*</div>\s*", re.I
-)
-_BLOCK_SPACING_PATTERN = re.compile(
-    r"(</(?:div|ul|ol|blockquote|pre|table|h[1-6])>)\s*(<(?:div|ul|ol|blockquote|pre|table|h[1-6])[\s>])",
-    re.I,
-)
 
 
 class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
@@ -550,15 +542,43 @@ end tell
 
         result = cast(str, md.render(protected_text))
         result = self._restore_latex(result, latex_matches) if latex_matches else result
-        return self._add_block_spacing(result)  # post-process: add block spacing
+
+        # post-process: add spacing between top-level block elements
+        return self._add_block_spacing(result)
 
     def _add_block_spacing(self, html: str) -> str:
         """adds <div><br></div> between adjacent block elements at top level."""
-        html = _EMPTY_DIV_PATTERN.sub(r"\1\n", html)
-        marker, prev = "\x00S\x00", ""
+        # first, clean up empty divs from markdown-it's loose list rendering
+        # pattern: <li> or <blockquote> followed by empty <div></div> or <div><br></div>
+        html = re.sub(
+            r"(<(?:li|blockquote)[^>]*>)\s*<div>(?:<br\s*/?>|\s)*</div>\s*",
+            r"\1\n",
+            html,
+            flags=re.IGNORECASE,
+        )
+
+        # use a unique marker to prevent infinite loops
+        spacer_marker = "\x00SPACER\x00"
+
+        # block element patterns (closing tag followed by opening tag)
+        block_pattern = re.compile(
+            r"(</(?:div|ul|ol|blockquote|pre|table|h[1-6])>)"
+            r"(\s*)"
+            r"(<(?:div|ul|ol|blockquote|pre|table|h[1-6])(?:\s|>))",
+            re.IGNORECASE,
+        )
+
+        def add_spacer(match: re.Match[str]) -> str:
+            return f"{match.group(1)}\n{spacer_marker}\n{match.group(3)}"
+
+        # repeatedly apply until no more changes (handles consecutive blocks)
+        prev = ""
         while prev != html:
-            prev, html = html, _BLOCK_SPACING_PATTERN.sub(rf"\1\n{marker}\n\2", html)
-        return html.replace(marker, "<div><br></div>")
+            prev = html
+            html = block_pattern.sub(add_spacer, html)
+
+        # replace markers with actual spacers
+        return html.replace(spacer_marker, "<div><br></div>")
 
     def _convert_image_to_png_data_url(self, data_url: str) -> str:
         """converts image data URL to PNG format for Apple Notes compatibility."""
