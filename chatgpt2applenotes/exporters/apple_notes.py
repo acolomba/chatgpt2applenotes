@@ -259,3 +259,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
     def scan_folder_notes(self, folder: str) -> dict[str, NoteInfo]:
         """scans folder and builds conversation_id -> NoteInfo index."""
         return applescript.scan_folder_notes(folder)
+
+    def move_note_to_archive_by_id(self, note_id: str, folder: str) -> bool:
+        """moves note to Archive subfolder by direct ID lookup."""
+        return applescript.move_note_to_archive_by_id(note_id, folder)

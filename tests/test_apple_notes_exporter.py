@@ -979,3 +979,17 @@ def test_scan_folder_notes_delegates_to_applescript() -> None:
 
     mock_scan.assert_called_once_with("TestFolder")
     assert "conv-1" in result
+
+
+def test_move_note_to_archive_by_id_delegates_to_applescript() -> None:
+    """tests move_note_to_archive_by_id calls applescript function."""
+    exporter = AppleNotesExporter(target="notes")
+
+    with patch(
+        "chatgpt2applenotes.exporters.applescript.move_note_to_archive_by_id",
+        return_value=True,
+    ) as mock_move:
+        result = exporter.move_note_to_archive_by_id("x-coredata://123", "TestFolder")
+
+    mock_move.assert_called_once_with("x-coredata://123", "TestFolder")
+    assert result is True
