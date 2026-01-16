@@ -313,6 +313,49 @@ end tell
         return []
 
 
+def move_note_to_archive_by_id(note_id: str, folder: str) -> bool:
+    """
+    moves note to Archive subfolder by direct ID lookup.
+
+    Args:
+        note_id: Apple Notes internal ID (x-coredata://... format)
+        folder: Apple Notes folder name (supports "Parent/Child" format)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    folder_ref = get_folder_ref(folder)
+    id_escaped = _escape_applescript(note_id)
+
+    applescript = f"""
+tell application "Notes"
+    try
+        set theNote to note id "{id_escaped}"
+
+        -- creates Archive subfolder if needed
+        if not (exists folder "Archive" of {folder_ref}) then
+            make new folder at {folder_ref} with properties {{name:"Archive"}}
+        end if
+
+        move theNote to folder "Archive" of {folder_ref}
+        return true
+    on error
+        return false
+    end try
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() == "true"
+    except subprocess.CalledProcessError:
+        return False
+
+
 def move_note_to_archive(folder: str, conversation_id: str) -> bool:
     """
     moves note to Archive subfolder.
