@@ -265,3 +265,122 @@ end tell
         return False
     finally:
         Path(html_path).unlink(missing_ok=True)
+
+
+def write_note(
+    folder_name: str,
+    conversation_id: str,
+    html_content: str,
+    overwrite: bool,
+    image_files: list[str],
+) -> None:
+    """
+    writes or updates note in Apple Notes using AppleScript.
+
+    Args:
+        folder_name: folder to store the note in
+        conversation_id: conversation ID for finding existing notes
+        html_content: HTML content for the note
+        overwrite: if True, update existing note with same ID
+        image_files: list of image file paths to add as attachments
+    """
+    # writes HTML to temporary file
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".html", delete=False, encoding="utf-8"
+    ) as html_file:
+        html_file.write(html_content)
+        html_path = html_file.name
+
+    # escapes quotes and backslashes for AppleScript
+    html_path_escaped = _escape_applescript(html_path)
+    id_escaped = _escape_applescript(conversation_id)
+
+    # gets folder reference and creation script (handles nested folders)
+    folder_ref = get_folder_ref(folder_name)
+    folder_create = get_folder_create_script(folder_name)
+
+    # prepares image attachment commands with deduplication
+    # workaround for Apple Notes 4.10-4.11 bug that creates duplicate attachments
+    attachment_commands = ""
+    if image_files:
+        attachment_commands = """
+    set attachmentsAdded to 0
+"""
+        for idx, img_path in enumerate(image_files):
+            img_path_escaped = _escape_applescript(img_path)
+            attachment_commands += f"""
+    set imgFile{idx} to POSIX file "{img_path_escaped}"
+    make new attachment at theNote with data imgFile{idx}
+    set attachmentsAdded to attachmentsAdded + 1
+    if ((count attachments of theNote) > attachmentsAdded) then
+        delete last attachment of theNote
+    end if
+"""
+
+    if overwrite:
+        # tries to find and delete existing note, then creates new one
+        applescript = f"""
+tell application "Notes"
+    -- creates folder if it doesn't exist
+{folder_create}
+
+    set targetFolder to {folder_ref}
+
+    -- searches for and deletes existing note containing conversation ID
+    set notesList to every note of targetFolder
+    repeat with aNote in notesList
+        if body of aNote contains "{id_escaped}" then
+            delete aNote
+            exit repeat
+        end if
+    end repeat
+
+    -- reads HTML from file
+    set htmlContent to read POSIX file "{html_path_escaped}" as «class utf8»
+
+    -- creates new note (title derived from H1 heading)
+    set theNote to make new note at targetFolder with properties {{body:htmlContent}}
+
+    -- adds image attachments (with deduplication for Apple Notes 4.10-4.11 bug)
+{attachment_commands}
+end tell
+"""
+    else:
+        # creates new note without checking for existing
+        applescript = f"""
+tell application "Notes"
+    -- creates folder if it doesn't exist
+{folder_create}
+
+    -- reads HTML from file
+    set htmlContent to read POSIX file "{html_path_escaped}" as «class utf8»
+
+    -- creates note (title derived from H1 heading)
+    set theNote to make new note at {folder_ref} with properties {{body:htmlContent}}
+
+    -- adds image attachments (with deduplication for Apple Notes 4.10-4.11 bug)
+{attachment_commands}
+end tell
+"""
+
+    # executes AppleScript via temporary file
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".scpt", delete=False
+    ) as script_file:
+        script_file.write(applescript)
+        script_path = script_file.name
+
+    try:
+        subprocess.run(
+            ["osascript", script_path],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        # cleans up temporary files
+        Path(script_path).unlink(missing_ok=True)
+        Path(html_path).unlink(missing_ok=True)
+        # cleans up image files
+        for img_path in image_files:
+            Path(img_path).unlink(missing_ok=True)
