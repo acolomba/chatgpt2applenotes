@@ -1025,6 +1025,10 @@ def test_export_uses_existing_noteinfo_for_update() -> None:
     # mocks the applescript functions
     with (
         patch(
+            "chatgpt2applenotes.exporters.applescript.read_note_body_by_id",
+            return_value="<html>existing content</html>",
+        ),
+        patch(
             "chatgpt2applenotes.exporters.applescript.delete_note_by_id",
             return_value=True,
         ) as mock_delete,
