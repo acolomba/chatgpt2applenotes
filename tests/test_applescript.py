@@ -105,16 +105,15 @@ def test_scan_folder_notes_builds_index() -> None:
         "</p></html>"
     )
 
-    with (
-        patch(
-            "chatgpt2applenotes.exporters.applescript.list_note_ids",
-            return_value=["x-coredata://id1", "x-coredata://id2"],
-        ),
-        patch(
-            "chatgpt2applenotes.exporters.applescript.read_note_body_by_id",
-            side_effect=[body1, body2],
-        ),
-    ):
+    # single-call format: noteId<<<!BODY!>>>noteBody<<<!NOTE!>>>...
+    mock_output = (
+        f"x-coredata://id1<<<!BODY!>>>{body1}<<<!NOTE!>>>"
+        f"x-coredata://id2<<<!BODY!>>>{body2}<<<!NOTE!>>>"
+    )
+    mock_result = MagicMock()
+    mock_result.stdout = mock_output
+
+    with patch("subprocess.run", return_value=mock_result):
         result = scan_folder_notes("TestFolder")
 
     assert len(result) == 2
@@ -141,16 +140,15 @@ def test_scan_folder_notes_skips_notes_without_footer() -> None:
         "</p></html>"
     )
 
-    with (
-        patch(
-            "chatgpt2applenotes.exporters.applescript.list_note_ids",
-            return_value=["x-coredata://id1", "x-coredata://id2"],
-        ),
-        patch(
-            "chatgpt2applenotes.exporters.applescript.read_note_body_by_id",
-            side_effect=[body1, body2],
-        ),
-    ):
+    # single-call format: noteId<<<!BODY!>>>noteBody<<<!NOTE!>>>...
+    mock_output = (
+        f"x-coredata://id1<<<!BODY!>>>{body1}<<<!NOTE!>>>"
+        f"x-coredata://id2<<<!BODY!>>>{body2}<<<!NOTE!>>>"
+    )
+    mock_result = MagicMock()
+    mock_result.stdout = mock_output
+
+    with patch("subprocess.run", return_value=mock_result):
         result = scan_folder_notes("TestFolder")
 
     assert len(result) == 1
@@ -159,10 +157,10 @@ def test_scan_folder_notes_skips_notes_without_footer() -> None:
 
 def test_scan_folder_notes_returns_empty_for_empty_folder() -> None:
     """tests scan_folder_notes returns empty dict for empty folder."""
-    with patch(
-        "chatgpt2applenotes.exporters.applescript.list_note_ids",
-        return_value=[],
-    ):
+    mock_result = MagicMock()
+    mock_result.stdout = ""
+
+    with patch("subprocess.run", return_value=mock_result):
         result = scan_folder_notes("TestFolder")
 
     assert not result

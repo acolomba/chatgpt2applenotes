@@ -191,28 +191,76 @@ def scan_folder_notes(folder: str) -> dict[str, NoteInfo]:
     """
     scans folder and builds conversation_id -> NoteInfo index.
 
+    Uses a single AppleScript call to get all note IDs and bodies together,
+    which is significantly faster than iterating with separate calls.
+
     Args:
         folder: Apple Notes folder name (supports "Parent/Child" format)
 
     Returns:
         dict mapping conversation_id to NoteInfo
     """
-    note_ids = list_note_ids(folder)
+    folder_ref = get_folder_ref(folder)
+
+    # single AppleScript call to get all note IDs and bodies
+    # uses unique separators that won't appear in note content
+    applescript = f"""
+tell application "Notes"
+    if not (exists {folder_ref}) then
+        return ""
+    end if
+
+    set notesList to every note of {folder_ref}
+    set output to ""
+    repeat with aNote in notesList
+        set noteId to id of aNote
+        set noteBody to body of aNote
+        set output to output & noteId & "<<<!BODY!>>>" & noteBody & "<<<!NOTE!>>>"
+    end repeat
+    return output
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout
+    except subprocess.CalledProcessError:
+        return {}
+
+    if not output.strip():
+        return {}
+
     index: dict[str, NoteInfo] = {}
 
-    for note_id in note_ids:
-        body = read_note_body_by_id(note_id)
-        if body:
-            # extracts conversation_id:last_message_id from footer
-            match = re.search(
-                r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}):"
-                r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})",
-                body,
-            )
-            if match:
-                conv_id = match.group(1)
-                msg_id = match.group(2)
-                index[conv_id] = NoteInfo(note_id, conv_id, msg_id)
+    # parses the combined output
+    for note_data in output.split("<<<!NOTE!>>>"):
+        if "<<<!BODY!>>>" not in note_data:
+            continue
+
+        parts = note_data.split("<<<!BODY!>>>", 1)
+        if len(parts) != 2:
+            continue
+
+        note_id = parts[0].strip()
+        body = parts[1]
+
+        if not note_id:
+            continue
+
+        # extracts conversation_id:last_message_id from footer
+        match = re.search(
+            r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}):"
+            r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})",
+            body,
+        )
+        if match:
+            conv_id = match.group(1)
+            msg_id = match.group(2)
+            index[conv_id] = NoteInfo(note_id, conv_id, msg_id)
 
     return index
 
