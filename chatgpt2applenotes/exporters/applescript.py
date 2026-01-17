@@ -3,8 +3,18 @@
 import re
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+
+@dataclass
+class NoteInfo:
+    """metadata for an existing Apple Note."""
+
+    note_id: str
+    conversation_id: str
+    last_message_id: str
 
 
 def _parse_folder_path(folder_name: str) -> tuple[str, Optional[str]]:
@@ -65,6 +75,194 @@ def get_folder_create_script(folder_name: str) -> str:
     if not (exists folder "{parent_escaped}") then
         make new folder with properties {{name:"{parent_escaped}"}}
     end if"""
+
+
+def list_note_ids(folder: str) -> list[str]:
+    """
+    lists all note IDs in folder.
+
+    Args:
+        folder: Apple Notes folder name (supports "Parent/Child" format)
+
+    Returns:
+        list of note IDs (x-coredata://... format)
+    """
+    folder_ref = get_folder_ref(folder)
+
+    applescript = f"""
+tell application "Notes"
+    if not (exists {folder_ref}) then
+        return ""
+    end if
+
+    set notesList to every note of {folder_ref}
+    set result to ""
+    repeat with aNote in notesList
+        set result to result & (id of aNote) & linefeed
+    end repeat
+    return result
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout.strip()
+        if not output:
+            return []
+        return [line for line in output.split("\n") if line]
+    except subprocess.CalledProcessError:
+        return []
+
+
+def delete_note_by_id(note_id: str) -> bool:
+    """
+    deletes note by direct ID lookup.
+
+    Args:
+        note_id: Apple Notes internal ID (x-coredata://... format)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    id_escaped = _escape_applescript(note_id)
+
+    applescript = f"""
+tell application "Notes"
+    try
+        delete note id "{id_escaped}"
+        return true
+    on error
+        return false
+    end try
+end tell
+"""
+    try:
+        subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def read_note_body_by_id(note_id: str) -> Optional[str]:
+    """
+    reads note body by direct ID lookup.
+
+    Args:
+        note_id: Apple Notes internal ID (x-coredata://... format)
+
+    Returns:
+        note body HTML if found, None otherwise
+    """
+    id_escaped = _escape_applescript(note_id)
+
+    applescript = f"""
+tell application "Notes"
+    try
+        set theNote to note id "{id_escaped}"
+        return body of theNote
+    on error
+        return ""
+    end try
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        body = result.stdout.strip()
+        return body if body else None
+    except subprocess.CalledProcessError:
+        return None
+
+
+def scan_folder_notes(folder: str) -> dict[str, NoteInfo]:
+    """
+    scans folder and builds conversation_id -> NoteInfo index.
+
+    Uses a single AppleScript call to get all note IDs and bodies together,
+    which is significantly faster than iterating with separate calls.
+
+    Args:
+        folder: Apple Notes folder name (supports "Parent/Child" format)
+
+    Returns:
+        dict mapping conversation_id to NoteInfo
+    """
+    folder_ref = get_folder_ref(folder)
+
+    # single AppleScript call to get all note IDs and bodies
+    # uses unique separators that won't appear in note content
+    applescript = f"""
+tell application "Notes"
+    if not (exists {folder_ref}) then
+        return ""
+    end if
+
+    set notesList to every note of {folder_ref}
+    set output to ""
+    repeat with aNote in notesList
+        set noteId to id of aNote
+        set noteBody to body of aNote
+        set output to output & noteId & "<<<!BODY!>>>" & noteBody & "<<<!NOTE!>>>"
+    end repeat
+    return output
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout
+    except subprocess.CalledProcessError:
+        return {}
+
+    if not output.strip():
+        return {}
+
+    index: dict[str, NoteInfo] = {}
+
+    # parses the combined output
+    for note_data in output.split("<<<!NOTE!>>>"):
+        if "<<<!BODY!>>>" not in note_data:
+            continue
+
+        parts = note_data.split("<<<!BODY!>>>", 1)
+        if len(parts) != 2:
+            continue
+
+        note_id = parts[0].strip()
+        body = parts[1]
+
+        if not note_id:
+            continue
+
+        # extracts conversation_id:last_message_id from footer
+        match = re.search(
+            r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}):"
+            r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})",
+            body,
+        )
+        if match:
+            conv_id = match.group(1)
+            msg_id = match.group(2)
+            index[conv_id] = NoteInfo(note_id, conv_id, msg_id)
+
+    return index
 
 
 def read_note_body(folder: str, conversation_id: str) -> Optional[str]:
@@ -161,6 +359,49 @@ end tell
         return conv_ids
     except subprocess.CalledProcessError:
         return []
+
+
+def move_note_to_archive_by_id(note_id: str, folder: str) -> bool:
+    """
+    moves note to Archive subfolder by direct ID lookup.
+
+    Args:
+        note_id: Apple Notes internal ID (x-coredata://... format)
+        folder: Apple Notes folder name (supports "Parent/Child" format)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    folder_ref = get_folder_ref(folder)
+    id_escaped = _escape_applescript(note_id)
+
+    applescript = f"""
+tell application "Notes"
+    try
+        set theNote to note id "{id_escaped}"
+
+        -- creates Archive subfolder if needed
+        if not (exists folder "Archive" of {folder_ref}) then
+            make new folder at {folder_ref} with properties {{name:"Archive"}}
+        end if
+
+        move theNote to folder "Archive" of {folder_ref}
+        return true
+    on error
+        return false
+    end try
+end tell
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() == "true"
+    except subprocess.CalledProcessError:
+        return False
 
 
 def move_note_to_archive(folder: str, conversation_id: str) -> bool:

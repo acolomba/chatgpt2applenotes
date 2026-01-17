@@ -11,6 +11,7 @@ from PIL import Image
 
 from chatgpt2applenotes.core.models import Conversation
 from chatgpt2applenotes.exporters import applescript
+from chatgpt2applenotes.exporters.applescript import NoteInfo
 from chatgpt2applenotes.exporters.base import Exporter
 from chatgpt2applenotes.exporters.html_renderer import AppleNotesRenderer
 
@@ -40,6 +41,8 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         destination: str,
         dry_run: bool = False,
         overwrite: bool = True,
+        existing: Optional[NoteInfo] = None,
+        scanned: bool = False,
     ) -> None:
         """
         Export conversation to Apple Notes format.
@@ -49,9 +52,13 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             destination: output directory path (folder name for notes target)
             dry_run: if True, don't write files
             overwrite: if True, overwrite existing files/notes
+            existing: optional NoteInfo for direct ID-based operations
+            scanned: if True, folder was already scanned (existing=None means no note exists)
         """
         if self.target == "notes":
-            self._export_to_notes(conversation, destination, dry_run, overwrite)
+            self._export_to_notes(
+                conversation, destination, dry_run, overwrite, existing, scanned
+            )
         else:
             self._export_to_file(conversation, destination, dry_run, overwrite)
 
@@ -108,18 +115,34 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         folder_name: str,
         dry_run: bool,
         overwrite: bool,
+        existing: Optional[NoteInfo] = None,
+        scanned: bool = False,
     ) -> None:
         """exports conversation directly to Apple Notes."""
         if dry_run:
             print(f"Would write note '{conversation.title}' to folder '{folder_name}'")
             return
 
-        # checks for existing note
-        existing_body = self.read_note_body(folder_name, conversation.id)
+        # determines existing note state
+        last_synced: Optional[str]
+        existing_body: Optional[str]
+        if existing:
+            # note found in scan - read by ID
+            existing_body = applescript.read_note_body_by_id(existing.note_id)
+            last_synced = existing.last_message_id
+        elif scanned:
+            # folder was scanned but note not found - no need to scan again
+            existing_body = None
+            last_synced = None
+        else:
+            # backwards compatibility: no scan was done, search for note
+            existing_body = self.read_note_body(folder_name, conversation.id)
+            last_synced = (
+                self.extract_last_synced_id(existing_body) if existing_body else None
+            )
 
         if existing_body and not overwrite:
             # tries append-only sync
-            last_synced = self.extract_last_synced_id(existing_body)
             if last_synced:
                 # finds new messages and appends
                 append_html = self.generate_append_html(conversation, last_synced)
@@ -142,9 +165,17 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         if self.cc_dir:
             self._save_cc_copy(conversation, html_content)
 
-        # uses AppleScript to create or update note
+        # deletes existing note by ID if we have it
+        if existing and overwrite:
+            applescript.delete_note_by_id(existing.note_id)
+
+        # uses AppleScript to create note (always create new after delete)
         self._write_to_apple_notes(
-            conversation, html_content, folder_name, overwrite, image_files
+            conversation,
+            html_content,
+            folder_name,
+            overwrite and not existing,
+            image_files,
         )
 
     def _write_to_apple_notes(
@@ -254,3 +285,11 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
     def move_note_to_archive(self, folder: str, conversation_id: str) -> bool:
         """moves note to Archive subfolder."""
         return applescript.move_note_to_archive(folder, conversation_id)
+
+    def scan_folder_notes(self, folder: str) -> dict[str, NoteInfo]:
+        """scans folder and builds conversation_id -> NoteInfo index."""
+        return applescript.scan_folder_notes(folder)
+
+    def move_note_to_archive_by_id(self, note_id: str, folder: str) -> bool:
+        """moves note to Archive subfolder by direct ID lookup."""
+        return applescript.move_note_to_archive_by_id(note_id, folder)

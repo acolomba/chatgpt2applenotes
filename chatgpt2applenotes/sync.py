@@ -9,6 +9,7 @@ from typing import Optional
 
 from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
+from chatgpt2applenotes.exporters.applescript import NoteInfo
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +89,19 @@ def sync_conversations(
     logger.info("Found %d conversation(s) to process", len(files))
 
     exporter = AppleNotesExporter(target="notes", cc_dir=cc_dir)
+
+    # single upfront scan of destination folder
+    note_index = exporter.scan_folder_notes(folder) if not dry_run else {}
+
     processed = 0
     failed = 0
     conversation_ids: list[str] = []
 
     for json_path in files:
         try:
-            result = _process_file(json_path, exporter, folder, dry_run, overwrite)
+            result = _process_file(
+                json_path, exporter, folder, dry_run, overwrite, note_index
+            )
             if result:
                 conversation_ids.append(result)
                 processed += 1
@@ -104,7 +111,7 @@ def sync_conversations(
 
     # handles archive-deleted if requested
     if archive_deleted and not dry_run:
-        _archive_deleted_notes(exporter, folder, conversation_ids)
+        _archive_deleted_notes(exporter, folder, conversation_ids, note_index)
 
     # prints summary
     logger.info(
@@ -125,6 +132,7 @@ def _process_file(
     folder: str,
     dry_run: bool,
     overwrite: bool,
+    note_index: dict[str, NoteInfo],
 ) -> Optional[str]:
     """
     processes a single JSON file.
@@ -138,26 +146,35 @@ def _process_file(
     conversation = process_conversation(json_data)
     logger.debug("Processing: %s", conversation.title)
 
+    # looks up existing note from index
+    existing = note_index.get(conversation.id)
+
     exporter.export(
         conversation=conversation,
         destination=folder,
         dry_run=dry_run,
         overwrite=overwrite,
+        existing=existing,
+        scanned=not dry_run,  # we scanned the folder unless in dry_run mode
     )
 
     return conversation.id
 
 
 def _archive_deleted_notes(
-    exporter: AppleNotesExporter, folder: str, conversation_ids: list[str]
+    exporter: AppleNotesExporter,
+    folder: str,
+    conversation_ids: list[str],
+    note_index: dict[str, NoteInfo],
 ) -> None:
     """moves notes not in conversation_ids to Archive subfolder."""
-    existing_ids = exporter.list_note_conversation_ids(folder)
     source_ids = set(conversation_ids)
 
     archived = 0
-    for conv_id in existing_ids:
-        if conv_id not in source_ids and exporter.move_note_to_archive(folder, conv_id):
+    for conv_id, note_info in note_index.items():
+        if conv_id not in source_ids and exporter.move_note_to_archive_by_id(
+            note_info.note_id, folder
+        ):
             logger.info("Archived: %s", conv_id)
             archived += 1
 
