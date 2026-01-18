@@ -59,3 +59,27 @@ def test_cli_accepts_cc_flag() -> None:
     """CLI accepts --cc flag with directory argument."""
     result = main(["nonexistent.json", "--cc", "/tmp/cc-test"])
     assert result == 2  # fatal error (file not found, but arg parsing succeeded)
+
+
+def test_cli_accepts_progress_flag() -> None:
+    """CLI accepts --progress flag."""
+    result = main(["nonexistent.json", "--progress"])
+    assert result == 2  # fatal error (file not found, but arg parsing succeeded)
+
+
+def test_cli_accepts_quiet_flag() -> None:
+    """CLI accepts --quiet flag."""
+    result = main(["nonexistent.json", "--quiet"])
+    assert result == 2
+
+
+def test_cli_accepts_quiet_short_flag() -> None:
+    """CLI accepts -q flag."""
+    result = main(["nonexistent.json", "-q"])
+    assert result == 2
+
+
+def test_cli_accepts_progress_and_quiet_together() -> None:
+    """CLI accepts --progress and --quiet together."""
+    result = main(["nonexistent.json", "--progress", "--quiet"])
+    assert result == 2
