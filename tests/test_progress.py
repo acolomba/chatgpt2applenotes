@@ -69,3 +69,34 @@ def test_set_total_does_nothing_when_progress_disabled() -> None:
     """set_total does nothing when show_progress is False."""
     handler = ProgressHandler(show_progress=False)
     handler.set_total(10)  # should not raise
+
+
+def test_adjust_total_increases_total() -> None:
+    """adjust_total increases the total count."""
+    with patch("chatgpt2applenotes.progress.Progress") as mock_progress_class:
+        mock_progress = MagicMock()
+        mock_progress_class.return_value = mock_progress
+        mock_progress.add_task.return_value = 0
+
+        handler = ProgressHandler(show_progress=True)
+        handler.start_discovery()
+        handler.set_total(10)
+        handler.adjust_total(5)
+
+        # should update task total to 15
+        mock_progress.update.assert_called()
+
+
+def test_update_advances_progress_and_sets_title() -> None:
+    """update advances progress by 1 and sets current title."""
+    with patch("chatgpt2applenotes.progress.Progress") as mock_progress_class:
+        mock_progress = MagicMock()
+        mock_progress_class.return_value = mock_progress
+        mock_progress.add_task.return_value = 0
+
+        handler = ProgressHandler(show_progress=True)
+        handler.start_discovery()
+        handler.set_total(10)
+        handler.update("Test Title")
+
+        mock_progress.update.assert_called()

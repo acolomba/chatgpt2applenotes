@@ -74,3 +74,18 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
         self._progress.start()
         self._task_id = self._progress.add_task("Syncing", total=total, title="")
         self._total = total
+
+    def adjust_total(self, delta: int) -> None:
+        """increases total when multi-conversation file found."""
+        if not self.show_progress or self._progress is None or self._task_id is None:
+            return
+
+        self._total += delta
+        self._progress.update(self._task_id, total=self._total)
+
+    def update(self, title: str) -> None:
+        """advances progress by 1 and updates current title."""
+        if not self.show_progress or self._progress is None or self._task_id is None:
+            return
+
+        self._progress.update(self._task_id, advance=1, title=title)
