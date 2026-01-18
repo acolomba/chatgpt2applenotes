@@ -48,3 +48,24 @@ def test_start_discovery_does_nothing_when_progress_disabled() -> None:
         handler.start_discovery()
 
         mock_progress_class.assert_not_called()
+
+
+def test_set_total_switches_to_determinate_progress() -> None:
+    """set_total switches from spinner to determinate progress bar."""
+    with patch("chatgpt2applenotes.progress.Progress") as mock_progress_class:
+        mock_progress = MagicMock()
+        mock_progress_class.return_value = mock_progress
+        mock_progress.add_task.return_value = 0
+
+        handler = ProgressHandler(show_progress=True)
+        handler.start_discovery()
+        handler.set_total(10)
+
+        # should stop spinner and start new progress bar
+        assert mock_progress.stop.call_count >= 1
+
+
+def test_set_total_does_nothing_when_progress_disabled() -> None:
+    """set_total does nothing when show_progress is False."""
+    handler = ProgressHandler(show_progress=False)
+    handler.set_total(10)  # should not raise
