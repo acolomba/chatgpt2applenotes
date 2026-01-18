@@ -59,6 +59,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         metavar="DIR",
         help="save copies of generated HTML to directory",
     )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="show progress bar during sync",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress all non-error output",
+    )
 
     args = parser.parse_args(argv)
 
@@ -86,6 +97,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             overwrite=args.overwrite,
             archive_deleted=args.archive_deleted,
             cc_dir=cc_dir,
+            quiet=args.quiet,
+            progress=args.progress,
         )
     except Exception as e:
         logger.error("Fatal error: %s", e)

@@ -230,3 +230,92 @@ def test_sync_passes_existing_noteinfo_to_export(tmp_path: Path) -> None:
         mock_exporter.export.assert_called_once()
         call_kwargs = mock_exporter.export.call_args.kwargs
         assert call_kwargs.get("existing") == existing_note
+
+
+def test_sync_accepts_quiet_and_progress_args(tmp_path: Path) -> None:
+    """sync_conversations accepts quiet and progress arguments."""
+    conv = {
+        "id": "conv-1",
+        "title": "Test",
+        "create_time": 1234567890.0,
+        "update_time": 1234567890.0,
+        "mapping": {},
+    }
+    (tmp_path / "conv.json").write_text(json.dumps(conv), encoding="utf-8")
+
+    with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
+        mock_exporter = MagicMock()
+        mock_exporter_class.return_value = mock_exporter
+
+        # should not raise
+        result = sync_conversations(
+            tmp_path, "TestFolder", dry_run=True, quiet=True, progress=True
+        )
+
+    assert result == 0
+
+
+def test_sync_handles_multi_conversation_file(tmp_path: Path) -> None:
+    """sync processes multiple conversations from a single file."""
+    # creates a file with multiple conversations (ChatGPT JSON export format)
+    conversations = [
+        {
+            "id": "conv-1",
+            "title": "First",
+            "create_time": 1234567890.0,
+            "update_time": 1234567890.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-2",
+            "title": "Second",
+            "create_time": 1234567891.0,
+            "update_time": 1234567891.0,
+            "mapping": {},
+        },
+    ]
+    (tmp_path / "multi.json").write_text(json.dumps(conversations), encoding="utf-8")
+
+    with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
+        mock_exporter = MagicMock()
+        mock_exporter_class.return_value = mock_exporter
+
+        result = sync_conversations(tmp_path, "TestFolder", dry_run=True)
+
+    assert result == 0
+    assert mock_exporter.export.call_count == 2
+
+
+def test_sync_continues_after_conversation_failure(tmp_path: Path) -> None:
+    """sync continues processing after individual conversation errors."""
+    # creates a file with two valid conversations
+    conversations = [
+        {
+            "id": "conv-1",
+            "title": "First",
+            "create_time": 1234567890.0,
+            "update_time": 1234567890.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-2",
+            "title": "Second",
+            "create_time": 1234567891.0,
+            "update_time": 1234567891.0,
+            "mapping": {},
+        },
+    ]
+    (tmp_path / "mixed.json").write_text(json.dumps(conversations), encoding="utf-8")
+
+    with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
+        mock_exporter = MagicMock()
+        mock_exporter_class.return_value = mock_exporter
+        # simulates export failure for the first conversation
+        mock_exporter.export.side_effect = [Exception("Export failed"), None]
+
+        result = sync_conversations(tmp_path, "TestFolder", dry_run=True)
+
+    # returns 1 (partial failure)
+    assert result == 1
+    # but still attempted both conversations
+    assert mock_exporter.export.call_count == 2
