@@ -28,3 +28,18 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
         if self._progress is not None:
             self._progress.stop()
             self._progress = None
+
+    def start_discovery(self) -> None:
+        """starts spinner for discovery phase."""
+        if not self.show_progress:
+            return
+
+        self._progress = Progress(
+            "[progress.description]{task.description}",
+            console=self._console,
+            transient=True,
+        )
+        self._progress.start()
+        self._task_id = self._progress.add_task(
+            "Discovering conversations...", total=None
+        )
