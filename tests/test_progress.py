@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+from rich.console import Console
+
 from chatgpt2applenotes.progress import ProgressHandler
 
 
@@ -100,3 +102,33 @@ def test_update_advances_progress_and_sets_title() -> None:
         handler.update("Test Title")
 
         mock_progress.update.assert_called()
+
+
+def test_log_error_prints_to_console() -> None:
+    """log_error prints error message to console."""
+    with patch.object(Console, "print") as mock_print:
+        handler = ProgressHandler()
+        handler.log_error("Test error")
+
+        mock_print.assert_called_once()
+        call_args = mock_print.call_args[0][0]
+        assert "Test error" in call_args
+
+
+def test_finish_prints_summary_when_not_quiet() -> None:
+    """finish prints summary when quiet is False."""
+    with patch.object(Console, "print") as mock_print:
+        handler = ProgressHandler(quiet=False)
+        handler.finish(processed=5, failed=2)
+
+        mock_print.assert_called()
+
+
+def test_finish_skips_summary_when_quiet() -> None:
+    """finish skips summary when quiet is True."""
+    with patch.object(Console, "print") as mock_print:
+        handler = ProgressHandler(quiet=True)
+        handler.finish(processed=5, failed=2)
+
+        # should not print summary (only errors allowed)
+        assert mock_print.call_count == 0

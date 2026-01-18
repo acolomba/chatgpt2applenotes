@@ -89,3 +89,21 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
             return
 
         self._progress.update(self._task_id, advance=1, title=title)
+
+    def log_error(self, message: str) -> None:
+        """prints error message (always shown, even in quiet mode)."""
+        self._console.print(f"[red]ERROR:[/red] {message}")
+
+    def finish(self, processed: int, failed: int) -> None:
+        """stops progress and prints summary unless quiet."""
+        if self._progress is not None:
+            self._progress.stop()
+            self._progress = None
+
+        if self.quiet:
+            return
+
+        total = processed + failed
+        self._console.print(
+            f"Processed {total} conversation(s): {processed} synced, {failed} failed"
+        )
