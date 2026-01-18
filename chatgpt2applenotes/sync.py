@@ -1,7 +1,6 @@
 """Sync module for batch processing conversations."""
 
 import json
-import logging
 import tempfile
 import zipfile
 from pathlib import Path
@@ -11,8 +10,6 @@ from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
 from chatgpt2applenotes.exporters.applescript import NoteInfo
 from chatgpt2applenotes.progress import ProgressHandler
-
-logger = logging.getLogger(__name__)
 
 
 def discover_files(source: Path) -> list[Path]:
@@ -121,7 +118,9 @@ def sync_conversations(
 
         # handles archive-deleted if requested
         if archive_deleted and not dry_run:
-            _archive_deleted_notes(exporter, folder, conversation_ids, note_index)
+            _archive_deleted_notes(
+                exporter, folder, conversation_ids, note_index, handler
+            )
 
         handler.finish(processed, failed)
 
@@ -190,6 +189,7 @@ def _archive_deleted_notes(
     folder: str,
     conversation_ids: list[str],
     note_index: dict[str, NoteInfo],
+    handler: ProgressHandler,
 ) -> None:
     """moves notes not in conversation_ids to Archive subfolder."""
     source_ids = set(conversation_ids)
@@ -199,8 +199,8 @@ def _archive_deleted_notes(
         if conv_id not in source_ids and exporter.move_note_to_archive_by_id(
             note_info.note_id, folder
         ):
-            logger.info("Archived: %s", conv_id)
+            handler.log_info(f"Archived: {conv_id}")
             archived += 1
 
     if archived:
-        logger.info("Archived %d note(s)", archived)
+        handler.log_info(f"Archived {archived} note(s)")
