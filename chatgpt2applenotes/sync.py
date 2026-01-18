@@ -10,6 +10,7 @@ from typing import Optional
 from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
 from chatgpt2applenotes.exporters.applescript import NoteInfo
+from chatgpt2applenotes.progress import ProgressHandler
 
 logger = logging.getLogger(__name__)
 
@@ -85,51 +86,48 @@ def sync_conversations(
     Returns:
         exit code (0 success, 1 partial failure, 2 fatal error)
     """
-    # placeholder: quiet and progress are wired up in a subsequent commit
-    _ = quiet, progress
+    with ProgressHandler(quiet=quiet, show_progress=progress) as handler:
+        handler.start_discovery()
 
-    files = discover_files(source)
-    if not files:
-        logger.warning("No JSON files found in %s", source)
+        files = discover_files(source)
+        if not files:
+            handler.log_info(f"No JSON files found in {source}")
+            return 0
+
+        handler.log_info(f"Found {len(files)} file(s) to process")
+        handler.set_total(len(files))
+
+        exporter = AppleNotesExporter(target="notes", cc_dir=cc_dir)
+
+        # single upfront scan of destination folder
+        note_index = exporter.scan_folder_notes(folder) if not dry_run else {}
+
+        processed = 0
+        failed = 0
+        conversation_ids: list[str] = []
+
+        for json_path in files:
+            try:
+                ids, conv_failed = _process_file(
+                    json_path, exporter, folder, dry_run, overwrite, note_index, handler
+                )
+                conversation_ids.extend(ids)
+                processed += len(ids)
+                failed += conv_failed
+            except Exception as e:
+                handler.log_error(f"Failed to load {json_path.name}: {e}")
+                handler.update(json_path.name)
+                failed += 1
+
+        # handles archive-deleted if requested
+        if archive_deleted and not dry_run:
+            _archive_deleted_notes(exporter, folder, conversation_ids, note_index)
+
+        handler.finish(processed, failed)
+
+        if failed > 0:
+            return 1
         return 0
-
-    logger.info("Found %d conversation(s) to process", len(files))
-
-    exporter = AppleNotesExporter(target="notes", cc_dir=cc_dir)
-
-    # single upfront scan of destination folder
-    note_index = exporter.scan_folder_notes(folder) if not dry_run else {}
-
-    processed = 0
-    failed = 0
-    conversation_ids: list[str] = []
-
-    for json_path in files:
-        try:
-            ids = _process_file(
-                json_path, exporter, folder, dry_run, overwrite, note_index
-            )
-            conversation_ids.extend(ids)
-            processed += len(ids)
-        except Exception as e:
-            logger.error("Failed: %s - %s", json_path.name, e)
-            failed += 1
-
-    # handles archive-deleted if requested
-    if archive_deleted and not dry_run:
-        _archive_deleted_notes(exporter, folder, conversation_ids, note_index)
-
-    # prints summary
-    logger.info(
-        "Processed %d conversation(s): %d synced, %d failed",
-        processed + failed,
-        processed,
-        failed,
-    )
-
-    if failed > 0:
-        return 1
-    return 0
 
 
 def _process_file(
@@ -139,12 +137,13 @@ def _process_file(
     dry_run: bool,
     overwrite: bool,
     note_index: dict[str, NoteInfo],
-) -> list[str]:
+    handler: ProgressHandler,
+) -> tuple[list[str], int]:
     """
     processes a single JSON file containing one or more conversations.
 
     Returns:
-        list of conversation IDs successfully processed
+        tuple of (list of conversation IDs successfully processed, count of failures)
     """
     with open(json_path, encoding="utf-8") as f:
         json_data = json.load(f)
@@ -152,26 +151,38 @@ def _process_file(
     # normalizes to list (ChatGPT exports single conversations as a list too)
     conversations_data = json_data if isinstance(json_data, list) else [json_data]
 
+    # adjusts total if file has multiple conversations
+    if len(conversations_data) > 1:
+        handler.adjust_total(len(conversations_data) - 1)
+
     conversation_ids = []
+    failed = 0
+
     for conv_data in conversations_data:
-        conversation = process_conversation(conv_data)
-        logger.debug("Processing: %s", conversation.title)
+        try:
+            conversation = process_conversation(conv_data)
+            handler.update(conversation.title)
 
-        # looks up existing note from index
-        existing = note_index.get(conversation.id)
+            # looks up existing note from index
+            existing = note_index.get(conversation.id)
 
-        exporter.export(
-            conversation=conversation,
-            destination=folder,
-            dry_run=dry_run,
-            overwrite=overwrite,
-            existing=existing,
-            scanned=not dry_run,  # we scanned the folder unless in dry_run mode
-        )
+            exporter.export(
+                conversation=conversation,
+                destination=folder,
+                dry_run=dry_run,
+                overwrite=overwrite,
+                existing=existing,
+                scanned=not dry_run,
+            )
 
-        conversation_ids.append(conversation.id)
+            conversation_ids.append(conversation.id)
+        except Exception as e:
+            title = conv_data.get("title", "Unknown")
+            handler.log_error(f"Failed: {json_path.name} - {title}: {e}")
+            handler.update(title)
+            failed += 1
 
-    return conversation_ids
+    return conversation_ids, failed
 
 
 def _archive_deleted_notes(
