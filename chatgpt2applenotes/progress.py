@@ -94,6 +94,13 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
         """prints error message (always shown, even in quiet mode)."""
         self._console.print(f"[red]ERROR:[/red] {message}")
 
+    def log_info(self, message: str) -> None:
+        """prints info message (only when not quiet and progress disabled)."""
+        if self.quiet or self.show_progress:
+            return
+
+        self._console.print(message)
+
     def finish(self, processed: int, failed: int) -> None:
         """stops progress and prints summary unless quiet."""
         if self._progress is not None:

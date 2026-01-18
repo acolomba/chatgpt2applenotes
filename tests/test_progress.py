@@ -132,3 +132,30 @@ def test_finish_skips_summary_when_quiet() -> None:
 
         # should not print summary (only errors allowed)
         assert mock_print.call_count == 0
+
+
+def test_log_info_prints_when_not_quiet_and_no_progress() -> None:
+    """log_info prints when quiet=False and show_progress=False."""
+    with patch.object(Console, "print") as mock_print:
+        handler = ProgressHandler(quiet=False, show_progress=False)
+        handler.log_info("Test info")
+
+        mock_print.assert_called_once()
+
+
+def test_log_info_skips_when_quiet() -> None:
+    """log_info skips printing when quiet=True."""
+    with patch.object(Console, "print") as mock_print:
+        handler = ProgressHandler(quiet=True, show_progress=False)
+        handler.log_info("Test info")
+
+        mock_print.assert_not_called()
+
+
+def test_log_info_skips_when_progress_enabled() -> None:
+    """log_info skips printing when show_progress=True."""
+    with patch.object(Console, "print") as mock_print:
+        handler = ProgressHandler(quiet=False, show_progress=True)
+        handler.log_info("Test info")
+
+        mock_print.assert_not_called()
