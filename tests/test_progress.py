@@ -17,3 +17,9 @@ def test_progress_handler_init_with_flags() -> None:
 
     assert handler.quiet is True
     assert handler.show_progress is True
+
+
+def test_progress_handler_context_manager() -> None:
+    """ProgressHandler works as context manager."""
+    with ProgressHandler() as handler:
+        assert handler is not None

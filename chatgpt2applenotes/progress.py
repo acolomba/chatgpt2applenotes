@@ -15,3 +15,16 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
         self._console = Console(stderr=True)
         self._progress: Optional[Progress] = None
         self._task_id: Optional[TaskID] = None
+
+    def __enter__(self) -> "ProgressHandler":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[object],
+    ) -> None:
+        if self._progress is not None:
+            self._progress.stop()
+            self._progress = None
