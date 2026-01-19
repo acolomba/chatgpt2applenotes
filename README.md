@@ -81,6 +81,52 @@ chatgpt2applenotes ~/Downloads/chatgpt-export.zip --archive-deleted
 
 This is useful when you delete conversations in ChatGPT and want to keep the notes organized. Archived notes are moved to `<folder>/Archive`.
 
+#### `--dry-run`
+
+Process files without writing to Apple Notes. Useful for testing.
+
+```sh
+chatgpt2applenotes ~/Downloads/chatgpt-export.zip --dry-run
+```
+
+#### `--progress`
+
+Show a progress bar during sync.
+
+```sh
+chatgpt2applenotes ~/Downloads/chatgpt-export.zip --progress
+```
+
+#### `-q/--quiet`
+
+Suppress non-error output.
+
+```sh
+chatgpt2applenotes ~/Downloads/chatgpt-export.zip -q
+```
+
+#### `-v/--verbose`
+
+Enable debug logging.
+
+```sh
+chatgpt2applenotes ~/Downloads/chatgpt-export.zip -v
+```
+
+#### `--cc DIR`
+
+Save copies of generated HTML to a directory (useful for debugging).
+
+```sh
+chatgpt2applenotes ~/Downloads/chatgpt-export.zip --cc ~/debug-output/
+```
+
+### Exit Codes
+
+- `0` - success
+- `1` - partial failure (some conversations failed)
+- `2` - fatal error
+
 ### Typical Workflow
 
 1. Install the [chatgpt-exporter](https://github.com/pionxzh/chatgpt-exporter) browser extension.
