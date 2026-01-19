@@ -12,12 +12,15 @@ Synchronizes ChatGPT conversation exports (JSON format from chatgpt-exporter) to
 chatgpt2applenotes/
 ├── __init__.py          # CLI entry point (main function)
 ├── sync.py              # batch processing & orchestration
+├── progress.py          # progress bar and output handling
 ├── core/
 │   ├── models.py        # Conversation/Message dataclasses
 │   └── parser.py        # JSON parsing, message extraction
 └── exporters/
     ├── base.py          # abstract Exporter base class
-    └── apple_notes.py   # Apple Notes exporter with sync
+    ├── apple_notes.py   # export orchestration and sync logic
+    ├── applescript.py   # AppleScript operations (note CRUD, folders)
+    └── html_renderer.py # markdown/HTML rendering for Apple Notes
 ```
 
 ### Data Flow
@@ -30,11 +33,13 @@ JSON → parser.process_conversation() → Conversation model → exporter.expor
 
 - **parser.py**: extracts messages from ChatGPT JSON export, handles message ordering and content normalization
 - **models.py**: `Conversation` and `Message` dataclasses with metadata
-- **apple_notes.py**: generates Apple Notes-compatible HTML, manages sync via AppleScript
-  - renders markdown to HTML using markdown-it-py with custom renderers
+- **sync.py**: batch processing, file discovery (JSON/ZIP/directory), single-pass folder scan for O(N+M) sync
+- **progress.py**: progress bar and structured output handling
+- **apple_notes.py**: export orchestration, sync logic, coordinates rendering and AppleScript operations
+- **applescript.py**: AppleScript operations via subprocess (note CRUD, folder management, archiving)
+- **html_renderer.py**: markdown-it-py rendering with custom renderers, LaTeX protection, block spacing
   - tracks sync state via footer metadata (`{conversation_id}:{last_message_id}`)
   - supports incremental append (default) or full overwrite (`--overwrite`)
-  - handles nested folders (`Parent/Child` syntax)
 
 ### Apple Notes Integration
 
@@ -48,13 +53,20 @@ Uses AppleScript directly (subprocess) for:
 ### CLI Usage
 
 ```bash
-chatgpt2applenotes <source> <folder> [--overwrite] [--archive-deleted]
+chatgpt2applenotes <source> [folder] [options]
 ```
 
 - `<source>`: JSON file, directory of JSON files, or ZIP archive
-- `<folder>`: Apple Notes folder name (supports `Parent/Child` nesting)
+- `[folder]`: Apple Notes folder name (supports `Parent/Child` nesting), defaults to "ChatGPT"
 - `--overwrite`: replace entire note content instead of appending
 - `--archive-deleted`: move notes not in source to Archive subfolder
+- `--dry-run`: process files without writing to Apple Notes
+- `--progress`: show progress bar
+- `-q/--quiet`: suppress non-error output
+- `-v/--verbose`: enable debug logging
+- `--cc DIR`: save copies of generated HTML to directory (works even with `--dry-run`)
+
+Exit codes: 0 (success), 1 (partial failure), 2 (fatal error)
 
 ## Guidelines
 
