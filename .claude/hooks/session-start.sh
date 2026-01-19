@@ -2,26 +2,34 @@
 set -euo pipefail
 
 # installs system packages for pre-commit hooks (remote only)
-if [[ ${CLAUDE_CODE_REMOTE:-} == true ]] && ! command -v shellcheck &> /dev/null; then
-  apt-get update -qq && apt-get install -y -qq shellcheck >/dev/null 2>&1
+if [[ ${CLAUDE_CODE_REMOTE:-} == true ]]; then
+  if ! command -v shellcheck &> /dev/null || ! command -v gitleaks &> /dev/null; then
+    apt-get update -qq && apt-get install -y -qq shellcheck gitleaks >/dev/null 2>&1
+  fi
 fi
 
-# creates venv if it doesn't exist
-if [[ ! -d venv ]]; then
-  python3 -m venv venv
+# creates .venv if it doesn't exist
+if [[ ! -d .venv ]]; then
+  python3 -m venv .venv
 
   # shellcheck source=/dev/null
-  source venv/bin/activate
+  source .venv/bin/activate
 
   pip install -q -e ".[dev]"
 else
   # shellcheck source=/dev/null
-  source venv/bin/activate
+  source .venv/bin/activate
 fi
 
 # installs pre-commit hooks (fast if already installed)
-pre-commit install
-pre-commit install --hook-type commit-msg
+# uses sandbox config in remote environments (local system hooks for shellcheck/gitleaks)
+if [[ ${CLAUDE_CODE_REMOTE:-} == true ]]; then
+  pre-commit install --config .pre-commit-config.sandbox.yaml
+  pre-commit install --config .pre-commit-config.sandbox.yaml --hook-type commit-msg
+else
+  pre-commit install
+  pre-commit install --hook-type commit-msg
+fi
 
-# activates the venv for the session
-echo "source \"$CLAUDE_PROJECT_DIR/venv/bin/activate\"" >> "$CLAUDE_ENV_FILE"
+# activates the .venv for the session
+echo "source \"$CLAUDE_PROJECT_DIR/.venv/bin/activate\"" >> "$CLAUDE_ENV_FILE"
