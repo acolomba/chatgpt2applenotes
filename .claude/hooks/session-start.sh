@@ -8,17 +8,17 @@ if [[ ${CLAUDE_CODE_REMOTE:-} == true ]]; then
   fi
 fi
 
-# creates venv if it doesn't exist
-if [[ ! -d venv ]]; then
-  python3 -m venv venv
+# creates .venv if it doesn't exist
+if [[ ! -d .venv ]]; then
+  python3 -m venv .venv
 
   # shellcheck source=/dev/null
-  source venv/bin/activate
+  source .venv/bin/activate
 
   pip install -q -e ".[dev]"
 else
   # shellcheck source=/dev/null
-  source venv/bin/activate
+  source .venv/bin/activate
 fi
 
 # installs pre-commit hooks (fast if already installed)
@@ -31,5 +31,5 @@ else
   pre-commit install --hook-type commit-msg
 fi
 
-# activates the venv for the session
-echo "source \"$CLAUDE_PROJECT_DIR/venv/bin/activate\"" >> "$CLAUDE_ENV_FILE"
+# activates the .venv for the session
+echo "source \"$CLAUDE_PROJECT_DIR/.venv/bin/activate\"" >> "$CLAUDE_ENV_FILE"
