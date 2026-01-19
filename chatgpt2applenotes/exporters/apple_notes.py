@@ -119,6 +119,11 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         scanned: bool = False,
     ) -> None:
         """exports conversation directly to Apple Notes."""
+        # saves cc copy even during dry run
+        if self.cc_dir:
+            html_content = self._generate_html(conversation)
+            self._save_cc_copy(conversation, html_content)
+
         if dry_run:
             print(f"Would write note '{conversation.title}' to folder '{folder_name}'")
             return
@@ -160,10 +165,6 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         # collects images and generates HTML content
         image_files: list[str] = []
         html_content = self._generate_html_with_images(conversation, image_files)
-
-        # saves copy to cc_dir if configured
-        if self.cc_dir:
-            self._save_cc_copy(conversation, html_content)
 
         # deletes existing note by ID if we have it
         if existing and overwrite:

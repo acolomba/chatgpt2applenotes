@@ -115,7 +115,7 @@ chatgpt2applenotes ~/Downloads/chatgpt-export.zip -v
 
 #### `--cc DIR`
 
-Save copies of generated HTML to a directory (useful for debugging).
+Save copies of generated HTML to a directory (useful for debugging). Works even with `--dry-run`.
 
 ```sh
 chatgpt2applenotes ~/Downloads/chatgpt-export.zip --cc ~/debug-output/

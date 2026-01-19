@@ -64,7 +64,7 @@ chatgpt2applenotes <source> [folder] [options]
 - `--progress`: show progress bar
 - `-q/--quiet`: suppress non-error output
 - `-v/--verbose`: enable debug logging
-- `--cc DIR`: save copies of generated HTML to directory
+- `--cc DIR`: save copies of generated HTML to directory (works even with `--dry-run`)
 
 Exit codes: 0 (success), 1 (partial failure), 2 (fatal error)
 
