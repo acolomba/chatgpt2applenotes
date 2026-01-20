@@ -23,6 +23,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "ijson~=3.2",
     "markdown-it-py~=3.0",
     "Pillow~=11.0",
     "rich~=13.9",
@@ -95,7 +96,7 @@ exclude = ["venv/", "build/", "dist/"]
 
 # ignores third-party packages without type stubs
 [[tool.mypy.overrides]]
-module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest", "markdown_it"]
+module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest", "markdown_it", "ijson"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -143,7 +144,8 @@ omit = [
 directory = "coverage_report"
 
 [tool.pylint.main]
-extension-pkg-allow-list = ["pytest", "PIL"]
+extension-pkg-allow-list = ["PIL", "pytest"]
+ignored-modules = ["ijson"]
 
 [tool.pylint.messages_control]
 disable = [

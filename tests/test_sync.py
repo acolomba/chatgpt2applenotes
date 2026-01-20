@@ -3,12 +3,17 @@
 import json
 import zipfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from chatgpt2applenotes.exporters.applescript import NoteInfo
-from chatgpt2applenotes.sync import discover_files, sync_conversations
+from chatgpt2applenotes.sync import (
+    build_conversation_index,
+    discover_files,
+    sync_conversations,
+)
 
 
 def test_discover_single_json_file(tmp_path: Path) -> None:
@@ -94,7 +99,7 @@ def test_sync_processes_all_files(tmp_path: Path) -> None:
 
 
 def test_sync_continues_on_error(tmp_path: Path) -> None:
-    """sync continues processing after individual file errors."""
+    """sync skips invalid files during index building."""
     # creates one valid and one invalid JSON file
     valid = {
         "id": "conv-1",
@@ -112,9 +117,8 @@ def test_sync_continues_on_error(tmp_path: Path) -> None:
 
         result = sync_conversations(tmp_path, "TestFolder", dry_run=True)
 
-    # returns 1 (partial failure) because one file failed
-    assert result == 1
-    # but still processed the valid file
+    # invalid files are skipped during index building, only valid ones are processed
+    assert result == 0
     assert mock_exporter.export.call_count == 1
 
 
@@ -183,7 +187,7 @@ def test_sync_scans_folder_once(tmp_path: Path) -> None:
     # creates test JSON file
     json_file = tmp_path / "conv1.json"
     json_file.write_text(
-        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, '
+        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, "update_time": 1234567890, '
         '"mapping": {"node1": {"message": {"id": "msg-1", "author": {"role": "user"}, '
         '"create_time": 1234567890, "content": {"content_type": "text", "parts": ["Hi"]}}}}}'
     )
@@ -208,7 +212,7 @@ def test_sync_passes_existing_noteinfo_to_export(tmp_path: Path) -> None:
     # creates test JSON file
     json_file = tmp_path / "conv1.json"
     json_file.write_text(
-        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, '
+        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, "update_time": 1234567890, '
         '"mapping": {"node1": {"message": {"id": "msg-1", "author": {"role": "user"}, '
         '"create_time": 1234567890, "content": {"content_type": "text", "parts": ["Hi"]}}}}}'
     )
@@ -319,3 +323,206 @@ def test_sync_continues_after_conversation_failure(tmp_path: Path) -> None:
     assert result == 1
     # but still attempted both conversations
     assert mock_exporter.export.call_count == 2
+
+
+def test_build_index_single_conversation_dict(tmp_path: Path) -> None:
+    """builds index from single-conversation dict file."""
+    conv = {
+        "id": "conv-1",
+        "title": "Test",
+        "create_time": 1000.0,
+        "update_time": 2000.0,
+        "mapping": {},
+    }
+    json_file = tmp_path / "conv.json"
+    json_file.write_text(json.dumps(conv), encoding="utf-8")
+
+    index = build_conversation_index([json_file])
+
+    assert len(index) == 1
+    assert index[0] == (2000.0, json_file, -1)
+
+
+def test_build_index_multi_conversation_list(tmp_path: Path) -> None:
+    """builds index from multi-conversation list file."""
+    conversations = [
+        {
+            "id": "conv-1",
+            "title": "First",
+            "create_time": 1000.0,
+            "update_time": 3000.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-2",
+            "title": "Second",
+            "create_time": 1000.0,
+            "update_time": 1000.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-3",
+            "title": "Third",
+            "create_time": 1000.0,
+            "update_time": 2000.0,
+            "mapping": {},
+        },
+    ]
+    json_file = tmp_path / "multi.json"
+    json_file.write_text(json.dumps(conversations), encoding="utf-8")
+
+    index = build_conversation_index([json_file])
+
+    assert len(index) == 3
+    assert index[0] == (3000.0, json_file, 0)
+    assert index[1] == (1000.0, json_file, 1)
+    assert index[2] == (2000.0, json_file, 2)
+
+
+def test_build_index_skips_invalid_files(tmp_path: Path) -> None:
+    """skips files that fail to parse."""
+    valid = {
+        "id": "conv-1",
+        "title": "Valid",
+        "create_time": 1000.0,
+        "update_time": 2000.0,
+        "mapping": {},
+    }
+    (tmp_path / "valid.json").write_text(json.dumps(valid), encoding="utf-8")
+    (tmp_path / "invalid.json").write_text("not valid json", encoding="utf-8")
+
+    index = build_conversation_index(
+        [tmp_path / "valid.json", tmp_path / "invalid.json"]
+    )
+
+    assert len(index) == 1
+    assert index[0][0] == 2000.0
+
+
+def test_build_index_mixed_files(tmp_path: Path) -> None:
+    """builds index from mix of dict and list files."""
+    dict_conv = {
+        "id": "conv-1",
+        "title": "Dict",
+        "create_time": 1000.0,
+        "update_time": 5000.0,
+        "mapping": {},
+    }
+    list_conv = [
+        {
+            "id": "conv-2",
+            "title": "List1",
+            "create_time": 1000.0,
+            "update_time": 3000.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-3",
+            "title": "List2",
+            "create_time": 1000.0,
+            "update_time": 1000.0,
+            "mapping": {},
+        },
+    ]
+    dict_file = tmp_path / "dict.json"
+    list_file = tmp_path / "list.json"
+    dict_file.write_text(json.dumps(dict_conv), encoding="utf-8")
+    list_file.write_text(json.dumps(list_conv), encoding="utf-8")
+
+    index = build_conversation_index([dict_file, list_file])
+
+    assert len(index) == 3
+    # dict file: -1 index
+    assert (5000.0, dict_file, -1) in index
+    # list file: indexed by position
+    assert (3000.0, list_file, 0) in index
+    assert (1000.0, list_file, 1) in index
+
+
+def test_sync_processes_in_update_time_order(tmp_path: Path) -> None:
+    """sync processes conversations in update_time ascending order."""
+    # creates files with different update_times
+    old = {
+        "id": "conv-old",
+        "title": "Old",
+        "create_time": 1000.0,
+        "update_time": 1000.0,
+        "mapping": {},
+    }
+    new = {
+        "id": "conv-new",
+        "title": "New",
+        "create_time": 1000.0,
+        "update_time": 3000.0,
+        "mapping": {},
+    }
+    mid = {
+        "id": "conv-mid",
+        "title": "Mid",
+        "create_time": 1000.0,
+        "update_time": 2000.0,
+        "mapping": {},
+    }
+
+    # filenames deliberately in REVERSE timestamp order (alphabetically: a < m < z)
+    # a_new.json has the newest timestamp
+    # z_old.json has the oldest timestamp
+    (tmp_path / "a_new.json").write_text(json.dumps(new), encoding="utf-8")
+    (tmp_path / "m_mid.json").write_text(json.dumps(mid), encoding="utf-8")
+    (tmp_path / "z_old.json").write_text(json.dumps(old), encoding="utf-8")
+
+    export_order: list[str] = []
+
+    with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
+        mock_exporter = MagicMock()
+        mock_exporter_class.return_value = mock_exporter
+
+        def track_export(conversation: Any, **_kwargs: Any) -> None:
+            export_order.append(conversation.id)
+
+        mock_exporter.export.side_effect = track_export
+
+        sync_conversations(tmp_path, "TestFolder", dry_run=True)
+
+    # should be sorted by update_time ascending (oldest first)
+    assert export_order == ["conv-old", "conv-mid", "conv-new"]
+
+
+def test_build_index_list_with_missing_update_time(tmp_path: Path) -> None:
+    """builds index preserving correct positions when conversations lack update_time."""
+    # item at index 1 is missing update_time, should be skipped
+    # but item at index 2 should still have correct index (2, not 1)
+    conversations = [
+        {
+            "id": "conv-0",
+            "title": "First",
+            "create_time": 1000.0,
+            "update_time": 1000.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-1",
+            "title": "Second (no update_time)",
+            "create_time": 1000.0,
+            # missing update_time
+            "mapping": {},
+        },
+        {
+            "id": "conv-2",
+            "title": "Third",
+            "create_time": 1000.0,
+            "update_time": 2000.0,
+            "mapping": {},
+        },
+    ]
+    json_file = tmp_path / "partial.json"
+    json_file.write_text(json.dumps(conversations), encoding="utf-8")
+
+    index = build_conversation_index([json_file])
+
+    # should have 2 entries (skips the one without update_time)
+    assert len(index) == 2
+    # first entry: index 0, update_time 1000.0
+    assert index[0] == (1000.0, json_file, 0)
+    # second entry: index 2 (NOT 1!), update_time 2000.0
+    assert index[1] == (2000.0, json_file, 2)

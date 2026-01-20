@@ -3,8 +3,11 @@
 import json
 import tempfile
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+import ijson
 
 from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
@@ -57,6 +60,77 @@ def _extract_zip(zip_path: Path) -> list[Path]:
     return sorted(temp_dir.glob("*.json"))
 
 
+def build_conversation_index(files: list[Path]) -> list[tuple[float, Path, int]]:
+    """
+    stream-parses files to build index of (update_time, path, index) tuples.
+
+    Args:
+        files: list of JSON file paths to index
+
+    Returns:
+        list of (update_time, path, index) tuples where index is -1 for dict
+        files, >= 0 for list files
+    """
+    index: list[tuple[float, Path, int]] = []
+
+    for file_path in files:
+        try:
+            with open(file_path, "rb") as f:
+                # peeks first non-whitespace char
+                first_char = _peek_first_char(f)
+                f.seek(0)
+
+                if first_char == ord("{"):
+                    # single conversation dict
+                    update_time = _extract_update_time_from_dict(f)
+                    if update_time is not None:
+                        index.append((update_time, file_path, -1))
+                elif first_char == ord("["):
+                    # list of conversations
+                    for i, update_time in _extract_update_times_from_list(f):
+                        index.append((update_time, file_path, i))
+        except Exception:
+            # skips files that fail to parse
+            pass
+
+    return index
+
+
+def _peek_first_char(f: Any) -> int:
+    """returns first non-whitespace byte from file."""
+    while True:
+        char = f.read(1)
+        if not char:
+            return 0
+        if not char.isspace():
+            return int(char[0])
+
+
+def _extract_update_time_from_dict(f: Any) -> Optional[float]:
+    """extracts update_time from a single conversation dict using streaming."""
+    parser = ijson.parse(f)
+    for prefix, event, value in parser:
+        if prefix == "update_time" and event == "number":
+            return float(value)
+    return None
+
+
+def _extract_update_times_from_list(f: Any) -> Iterator[tuple[int, float]]:
+    """
+    yields (index, update_time) tuples from a list of conversations using streaming.
+
+    tracks array position via start_map events to preserve correct indices when
+    conversations lack update_time.
+    """
+    parser = ijson.parse(f)
+    current_index = -1
+    for prefix, event, value in parser:
+        if prefix == "item" and event == "start_map":
+            current_index += 1
+        elif prefix == "item.update_time" and event == "number":
+            yield (current_index, float(value))
+
+
 def sync_conversations(
     source: Path,
     folder: str,
@@ -91,8 +165,12 @@ def sync_conversations(
             handler.log_info(f"No JSON files found in {source}")
             return 0
 
-        handler.log_info(f"Found {len(files)} file(s) to process")
-        handler.set_total(len(files))
+        # builds index of (update_time, path, index) and sorts by update_time ascending
+        index = build_conversation_index(files)
+        index.sort(key=lambda x: x[0])
+
+        handler.log_info(f"Found {len(index)} conversation(s) to process")
+        handler.set_total(len(index))
 
         exporter = AppleNotesExporter(target="notes", cc_dir=cc_dir)
 
@@ -103,17 +181,22 @@ def sync_conversations(
         failed = 0
         conversation_ids: list[str] = []
 
-        for json_path in files:
-            try:
-                ids, conv_failed = _process_file(
-                    json_path, exporter, folder, dry_run, overwrite, note_index, handler
-                )
-                conversation_ids.extend(ids)
-                processed += len(ids)
-                failed += conv_failed
-            except Exception as e:
-                handler.log_error(f"Failed to load {json_path.name}: {e}")
-                handler.update(json_path.name)
+        for _update_time, file_path, conv_index in index:
+            conv_id, success = _process_indexed_conversation(
+                file_path,
+                conv_index,
+                exporter,
+                folder,
+                dry_run,
+                overwrite,
+                note_index,
+                handler,
+            )
+            if conv_id:
+                conversation_ids.append(conv_id)
+            if success:
+                processed += 1
+            else:
                 failed += 1
 
         # handles archive-deleted if requested
@@ -129,59 +212,70 @@ def sync_conversations(
         return 0
 
 
-def _process_file(
-    json_path: Path,
+def _process_indexed_conversation(
+    file_path: Path,
+    conv_index: int,
     exporter: AppleNotesExporter,
     folder: str,
     dry_run: bool,
     overwrite: bool,
     note_index: dict[str, NoteInfo],
     handler: ProgressHandler,
-) -> tuple[list[str], int]:
+) -> tuple[Optional[str], bool]:
     """
-    processes a single JSON file containing one or more conversations.
+    processes a single conversation by file path and index.
+
+    Args:
+        file_path: path to JSON file
+        conv_index: index within list file, or -1 for dict file
+        exporter: the AppleNotesExporter instance
+        folder: destination folder name
+        dry_run: if True, don't write to Apple Notes
+        overwrite: if True, replace notes instead of appending
+        note_index: map of conversation_id to NoteInfo
+        handler: progress handler
 
     Returns:
-        tuple of (list of conversation IDs successfully processed, count of failures)
+        tuple of (conversation_id or None, success bool)
     """
-    with open(json_path, encoding="utf-8") as f:
-        json_data = json.load(f)
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            json_data = json.load(f)
 
-    # normalizes to list (ChatGPT exports single conversations as a list too)
-    conversations_data = json_data if isinstance(json_data, list) else [json_data]
+        # extracts conversation data: dict file uses data directly, list file indexes
+        conv_data = json_data if conv_index == -1 else json_data[conv_index]
 
-    # adjusts total if file has multiple conversations
-    if len(conversations_data) > 1:
-        handler.adjust_total(len(conversations_data) - 1)
+        conversation = process_conversation(conv_data)
+        handler.update(conversation.title)
 
-    conversation_ids = []
-    failed = 0
+        # looks up existing note from index
+        existing = note_index.get(conversation.id)
 
-    for conv_data in conversations_data:
+        exporter.export(
+            conversation=conversation,
+            destination=folder,
+            dry_run=dry_run,
+            overwrite=overwrite,
+            existing=existing,
+            scanned=not dry_run,
+        )
+
+        return conversation.id, True
+
+    except Exception as e:
+        title = "Unknown"
         try:
-            conversation = process_conversation(conv_data)
-            handler.update(conversation.title)
-
-            # looks up existing note from index
-            existing = note_index.get(conversation.id)
-
-            exporter.export(
-                conversation=conversation,
-                destination=folder,
-                dry_run=dry_run,
-                overwrite=overwrite,
-                existing=existing,
-                scanned=not dry_run,
-            )
-
-            conversation_ids.append(conversation.id)
-        except Exception as e:
-            title = conv_data.get("title", "Unknown")
-            handler.log_error(f"Failed: {json_path.name} - {title}: {e}")
-            handler.update(title)
-            failed += 1
-
-    return conversation_ids, failed
+            with open(file_path, encoding="utf-8") as f:
+                json_data = json.load(f)
+            if conv_index == -1:
+                title = json_data.get("title", "Unknown")
+            else:
+                title = json_data[conv_index].get("title", "Unknown")
+        except Exception:
+            pass
+        handler.log_error(f"Failed: {file_path.name} - {title}: {e}")
+        handler.update(title)
+        return None, False
 
 
 def _archive_deleted_notes(
