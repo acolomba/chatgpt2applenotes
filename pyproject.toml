@@ -96,7 +96,7 @@ exclude = ["venv/", "build/", "dist/"]
 
 # ignores third-party packages without type stubs
 [[tool.mypy.overrides]]
-module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest", "markdown_it"]
+module = ["requests", "hamcrest", "testcontainers.*", "tzlocal", "pytest", "markdown_it", "ijson"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
