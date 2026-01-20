@@ -377,3 +377,23 @@ def test_build_index_multi_conversation_list(tmp_path: Path) -> None:
     assert index[0] == (3000.0, json_file, 0)
     assert index[1] == (1000.0, json_file, 1)
     assert index[2] == (2000.0, json_file, 2)
+
+
+def test_build_index_skips_invalid_files(tmp_path: Path) -> None:
+    """skips files that fail to parse."""
+    valid = {
+        "id": "conv-1",
+        "title": "Valid",
+        "create_time": 1000.0,
+        "update_time": 2000.0,
+        "mapping": {},
+    }
+    (tmp_path / "valid.json").write_text(json.dumps(valid), encoding="utf-8")
+    (tmp_path / "invalid.json").write_text("not valid json", encoding="utf-8")
+
+    index = build_conversation_index(
+        [tmp_path / "valid.json", tmp_path / "invalid.json"]
+    )
+
+    assert len(index) == 1
+    assert index[0][0] == 2000.0
