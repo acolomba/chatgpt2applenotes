@@ -3,8 +3,11 @@
 import json
 import tempfile
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+import ijson
 
 from chatgpt2applenotes.core.parser import process_conversation
 from chatgpt2applenotes.exporters.apple_notes import AppleNotesExporter
@@ -55,6 +58,69 @@ def _extract_zip(zip_path: Path) -> list[Path]:
                 target_path.write_bytes(zf.read(source_info))
 
     return sorted(temp_dir.glob("*.json"))
+
+
+def build_conversation_index(files: list[Path]) -> list[tuple[float, Path, int]]:
+    """
+    stream-parses files to build index of (update_time, path, index) tuples.
+
+    Args:
+        files: list of JSON file paths to index
+
+    Returns:
+        list of (update_time, path, index) tuples where index is -1 for dict
+        files, >= 0 for list files
+    """
+    index: list[tuple[float, Path, int]] = []
+
+    for file_path in files:
+        try:
+            with open(file_path, "rb") as f:
+                # peeks first non-whitespace char
+                first_char = _peek_first_char(f)
+                f.seek(0)
+
+                if first_char == ord("{"):
+                    # single conversation dict
+                    update_time = _extract_update_time_from_dict(f)
+                    if update_time is not None:
+                        index.append((update_time, file_path, -1))
+                elif first_char == ord("["):
+                    # list of conversations
+                    for i, update_time in enumerate(_extract_update_times_from_list(f)):
+                        index.append((update_time, file_path, i))
+        except Exception:
+            # skips files that fail to parse
+            pass
+
+    return index
+
+
+def _peek_first_char(f: Any) -> int:
+    """returns first non-whitespace byte from file."""
+    while True:
+        char = f.read(1)
+        if not char:
+            return 0
+        if not char.isspace():
+            return int(char[0])
+
+
+def _extract_update_time_from_dict(f: Any) -> Optional[float]:
+    """extracts update_time from a single conversation dict using streaming."""
+    parser = ijson.parse(f)
+    for prefix, event, value in parser:
+        if prefix == "update_time" and event == "number":
+            return float(value)
+    return None
+
+
+def _extract_update_times_from_list(f: Any) -> Iterator[float]:
+    """yields update_time values from a list of conversations using streaming."""
+    parser = ijson.parse(f)
+    for prefix, event, value in parser:
+        if prefix == "item.update_time" and event == "number":
+            yield float(value)
 
 
 def sync_conversations(

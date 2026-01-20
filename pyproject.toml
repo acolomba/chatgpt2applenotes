@@ -144,7 +144,8 @@ omit = [
 directory = "coverage_report"
 
 [tool.pylint.main]
-extension-pkg-allow-list = ["pytest", "PIL"]
+extension-pkg-allow-list = ["PIL", "pytest"]
+ignored-modules = ["ijson"]
 
 [tool.pylint.messages_control]
 disable = [

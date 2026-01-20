@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from chatgpt2applenotes.exporters.applescript import NoteInfo
-from chatgpt2applenotes.sync import discover_files, sync_conversations
+from chatgpt2applenotes.sync import (
+    build_conversation_index,
+    discover_files,
+    sync_conversations,
+)
 
 
 def test_discover_single_json_file(tmp_path: Path) -> None:
@@ -319,3 +323,21 @@ def test_sync_continues_after_conversation_failure(tmp_path: Path) -> None:
     assert result == 1
     # but still attempted both conversations
     assert mock_exporter.export.call_count == 2
+
+
+def test_build_index_single_conversation_dict(tmp_path: Path) -> None:
+    """builds index from single-conversation dict file."""
+    conv = {
+        "id": "conv-1",
+        "title": "Test",
+        "create_time": 1000.0,
+        "update_time": 2000.0,
+        "mapping": {},
+    }
+    json_file = tmp_path / "conv.json"
+    json_file.write_text(json.dumps(conv), encoding="utf-8")
+
+    index = build_conversation_index([json_file])
+
+    assert len(index) == 1
+    assert index[0] == (2000.0, json_file, -1)
