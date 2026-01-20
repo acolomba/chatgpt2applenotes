@@ -397,3 +397,43 @@ def test_build_index_skips_invalid_files(tmp_path: Path) -> None:
 
     assert len(index) == 1
     assert index[0][0] == 2000.0
+
+
+def test_build_index_mixed_files(tmp_path: Path) -> None:
+    """builds index from mix of dict and list files."""
+    dict_conv = {
+        "id": "conv-1",
+        "title": "Dict",
+        "create_time": 1000.0,
+        "update_time": 5000.0,
+        "mapping": {},
+    }
+    list_conv = [
+        {
+            "id": "conv-2",
+            "title": "List1",
+            "create_time": 1000.0,
+            "update_time": 3000.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-3",
+            "title": "List2",
+            "create_time": 1000.0,
+            "update_time": 1000.0,
+            "mapping": {},
+        },
+    ]
+    dict_file = tmp_path / "dict.json"
+    list_file = tmp_path / "list.json"
+    dict_file.write_text(json.dumps(dict_conv), encoding="utf-8")
+    list_file.write_text(json.dumps(list_conv), encoding="utf-8")
+
+    index = build_conversation_index([dict_file, list_file])
+
+    assert len(index) == 3
+    # dict file: -1 index
+    assert (5000.0, dict_file, -1) in index
+    # list file: indexed by position
+    assert (3000.0, list_file, 0) in index
+    assert (1000.0, list_file, 1) in index
