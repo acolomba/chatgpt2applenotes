@@ -204,61 +204,6 @@ def sync_conversations(
         return 0
 
 
-def _process_file(
-    json_path: Path,
-    exporter: AppleNotesExporter,
-    folder: str,
-    dry_run: bool,
-    overwrite: bool,
-    note_index: dict[str, NoteInfo],
-    handler: ProgressHandler,
-) -> tuple[list[str], int]:
-    """
-    processes a single JSON file containing one or more conversations.
-
-    Returns:
-        tuple of (list of conversation IDs successfully processed, count of failures)
-    """
-    with open(json_path, encoding="utf-8") as f:
-        json_data = json.load(f)
-
-    # normalizes to list (ChatGPT exports single conversations as a list too)
-    conversations_data = json_data if isinstance(json_data, list) else [json_data]
-
-    # adjusts total if file has multiple conversations
-    if len(conversations_data) > 1:
-        handler.adjust_total(len(conversations_data) - 1)
-
-    conversation_ids = []
-    failed = 0
-
-    for conv_data in conversations_data:
-        try:
-            conversation = process_conversation(conv_data)
-            handler.update(conversation.title)
-
-            # looks up existing note from index
-            existing = note_index.get(conversation.id)
-
-            exporter.export(
-                conversation=conversation,
-                destination=folder,
-                dry_run=dry_run,
-                overwrite=overwrite,
-                existing=existing,
-                scanned=not dry_run,
-            )
-
-            conversation_ids.append(conversation.id)
-        except Exception as e:
-            title = conv_data.get("title", "Unknown")
-            handler.log_error(f"Failed: {json_path.name} - {title}: {e}")
-            handler.update(title)
-            failed += 1
-
-    return conversation_ids, failed
-
-
 def _process_indexed_conversation(
     file_path: Path,
     conv_index: int,
