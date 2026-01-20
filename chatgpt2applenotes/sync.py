@@ -87,7 +87,7 @@ def build_conversation_index(files: list[Path]) -> list[tuple[float, Path, int]]
                         index.append((update_time, file_path, -1))
                 elif first_char == ord("["):
                     # list of conversations
-                    for i, update_time in enumerate(_extract_update_times_from_list(f)):
+                    for i, update_time in _extract_update_times_from_list(f):
                         index.append((update_time, file_path, i))
         except Exception:
             # skips files that fail to parse
@@ -115,12 +115,20 @@ def _extract_update_time_from_dict(f: Any) -> Optional[float]:
     return None
 
 
-def _extract_update_times_from_list(f: Any) -> Iterator[float]:
-    """yields update_time values from a list of conversations using streaming."""
+def _extract_update_times_from_list(f: Any) -> Iterator[tuple[int, float]]:
+    """
+    yields (index, update_time) tuples from a list of conversations using streaming.
+
+    tracks array position via start_map events to preserve correct indices when
+    conversations lack update_time.
+    """
     parser = ijson.parse(f)
+    current_index = -1
     for prefix, event, value in parser:
-        if prefix == "item.update_time" and event == "number":
-            yield float(value)
+        if prefix == "item" and event == "start_map":
+            current_index += 1
+        elif prefix == "item.update_time" and event == "number":
+            yield (current_index, float(value))
 
 
 def sync_conversations(

@@ -486,3 +486,43 @@ def test_sync_processes_in_update_time_order(tmp_path: Path) -> None:
 
     # should be sorted by update_time ascending (oldest first)
     assert export_order == ["conv-old", "conv-mid", "conv-new"]
+
+
+def test_build_index_list_with_missing_update_time(tmp_path: Path) -> None:
+    """builds index preserving correct positions when conversations lack update_time."""
+    # item at index 1 is missing update_time, should be skipped
+    # but item at index 2 should still have correct index (2, not 1)
+    conversations = [
+        {
+            "id": "conv-0",
+            "title": "First",
+            "create_time": 1000.0,
+            "update_time": 1000.0,
+            "mapping": {},
+        },
+        {
+            "id": "conv-1",
+            "title": "Second (no update_time)",
+            "create_time": 1000.0,
+            # missing update_time
+            "mapping": {},
+        },
+        {
+            "id": "conv-2",
+            "title": "Third",
+            "create_time": 1000.0,
+            "update_time": 2000.0,
+            "mapping": {},
+        },
+    ]
+    json_file = tmp_path / "partial.json"
+    json_file.write_text(json.dumps(conversations), encoding="utf-8")
+
+    index = build_conversation_index([json_file])
+
+    # should have 2 entries (skips the one without update_time)
+    assert len(index) == 2
+    # first entry: index 0, update_time 1000.0
+    assert index[0] == (1000.0, json_file, 0)
+    # second entry: index 2 (NOT 1!), update_time 2000.0
+    assert index[1] == (2000.0, json_file, 2)
