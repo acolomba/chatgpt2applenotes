@@ -157,8 +157,12 @@ def sync_conversations(
             handler.log_info(f"No JSON files found in {source}")
             return 0
 
-        handler.log_info(f"Found {len(files)} file(s) to process")
-        handler.set_total(len(files))
+        # builds index of (update_time, path, index) and sorts by update_time ascending
+        index = build_conversation_index(files)
+        index.sort(key=lambda x: x[0])
+
+        handler.log_info(f"Found {len(index)} conversation(s) to process")
+        handler.set_total(len(index))
 
         exporter = AppleNotesExporter(target="notes", cc_dir=cc_dir)
 
@@ -169,17 +173,22 @@ def sync_conversations(
         failed = 0
         conversation_ids: list[str] = []
 
-        for json_path in files:
-            try:
-                ids, conv_failed = _process_file(
-                    json_path, exporter, folder, dry_run, overwrite, note_index, handler
-                )
-                conversation_ids.extend(ids)
-                processed += len(ids)
-                failed += conv_failed
-            except Exception as e:
-                handler.log_error(f"Failed to load {json_path.name}: {e}")
-                handler.update(json_path.name)
+        for _update_time, file_path, conv_index in index:
+            conv_id, success = _process_indexed_conversation(
+                file_path,
+                conv_index,
+                exporter,
+                folder,
+                dry_run,
+                overwrite,
+                note_index,
+                handler,
+            )
+            if conv_id:
+                conversation_ids.append(conv_id)
+            if success:
+                processed += 1
+            else:
                 failed += 1
 
         # handles archive-deleted if requested
@@ -248,6 +257,72 @@ def _process_file(
             failed += 1
 
     return conversation_ids, failed
+
+
+def _process_indexed_conversation(
+    file_path: Path,
+    conv_index: int,
+    exporter: AppleNotesExporter,
+    folder: str,
+    dry_run: bool,
+    overwrite: bool,
+    note_index: dict[str, NoteInfo],
+    handler: ProgressHandler,
+) -> tuple[Optional[str], bool]:
+    """
+    processes a single conversation by file path and index.
+
+    Args:
+        file_path: path to JSON file
+        conv_index: index within list file, or -1 for dict file
+        exporter: the AppleNotesExporter instance
+        folder: destination folder name
+        dry_run: if True, don't write to Apple Notes
+        overwrite: if True, replace notes instead of appending
+        note_index: map of conversation_id to NoteInfo
+        handler: progress handler
+
+    Returns:
+        tuple of (conversation_id or None, success bool)
+    """
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            json_data = json.load(f)
+
+        # extracts conversation data: dict file uses data directly, list file indexes
+        conv_data = json_data if conv_index == -1 else json_data[conv_index]
+
+        conversation = process_conversation(conv_data)
+        handler.update(conversation.title)
+
+        # looks up existing note from index
+        existing = note_index.get(conversation.id)
+
+        exporter.export(
+            conversation=conversation,
+            destination=folder,
+            dry_run=dry_run,
+            overwrite=overwrite,
+            existing=existing,
+            scanned=not dry_run,
+        )
+
+        return conversation.id, True
+
+    except Exception as e:
+        title = "Unknown"
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                json_data = json.load(f)
+            if conv_index == -1:
+                title = json_data.get("title", "Unknown")
+            else:
+                title = json_data[conv_index].get("title", "Unknown")
+        except Exception:
+            pass
+        handler.log_error(f"Failed: {file_path.name} - {title}: {e}")
+        handler.update(title)
+        return None, False
 
 
 def _archive_deleted_notes(

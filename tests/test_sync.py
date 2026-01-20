@@ -3,6 +3,7 @@
 import json
 import zipfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -98,7 +99,7 @@ def test_sync_processes_all_files(tmp_path: Path) -> None:
 
 
 def test_sync_continues_on_error(tmp_path: Path) -> None:
-    """sync continues processing after individual file errors."""
+    """sync skips invalid files during index building."""
     # creates one valid and one invalid JSON file
     valid = {
         "id": "conv-1",
@@ -116,9 +117,8 @@ def test_sync_continues_on_error(tmp_path: Path) -> None:
 
         result = sync_conversations(tmp_path, "TestFolder", dry_run=True)
 
-    # returns 1 (partial failure) because one file failed
-    assert result == 1
-    # but still processed the valid file
+    # invalid files are skipped during index building, only valid ones are processed
+    assert result == 0
     assert mock_exporter.export.call_count == 1
 
 
@@ -187,7 +187,7 @@ def test_sync_scans_folder_once(tmp_path: Path) -> None:
     # creates test JSON file
     json_file = tmp_path / "conv1.json"
     json_file.write_text(
-        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, '
+        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, "update_time": 1234567890, '
         '"mapping": {"node1": {"message": {"id": "msg-1", "author": {"role": "user"}, '
         '"create_time": 1234567890, "content": {"content_type": "text", "parts": ["Hi"]}}}}}'
     )
@@ -212,7 +212,7 @@ def test_sync_passes_existing_noteinfo_to_export(tmp_path: Path) -> None:
     # creates test JSON file
     json_file = tmp_path / "conv1.json"
     json_file.write_text(
-        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, '
+        '{"id": "conv-1", "title": "Test", "create_time": 1234567890, "update_time": 1234567890, '
         '"mapping": {"node1": {"message": {"id": "msg-1", "author": {"role": "user"}, '
         '"create_time": 1234567890, "content": {"content_type": "text", "parts": ["Hi"]}}}}}'
     )
@@ -437,3 +437,52 @@ def test_build_index_mixed_files(tmp_path: Path) -> None:
     # list file: indexed by position
     assert (3000.0, list_file, 0) in index
     assert (1000.0, list_file, 1) in index
+
+
+def test_sync_processes_in_update_time_order(tmp_path: Path) -> None:
+    """sync processes conversations in update_time ascending order."""
+    # creates files with different update_times
+    old = {
+        "id": "conv-old",
+        "title": "Old",
+        "create_time": 1000.0,
+        "update_time": 1000.0,
+        "mapping": {},
+    }
+    new = {
+        "id": "conv-new",
+        "title": "New",
+        "create_time": 1000.0,
+        "update_time": 3000.0,
+        "mapping": {},
+    }
+    mid = {
+        "id": "conv-mid",
+        "title": "Mid",
+        "create_time": 1000.0,
+        "update_time": 2000.0,
+        "mapping": {},
+    }
+
+    # filenames deliberately in REVERSE timestamp order (alphabetically: a < m < z)
+    # a_new.json has the newest timestamp
+    # z_old.json has the oldest timestamp
+    (tmp_path / "a_new.json").write_text(json.dumps(new), encoding="utf-8")
+    (tmp_path / "m_mid.json").write_text(json.dumps(mid), encoding="utf-8")
+    (tmp_path / "z_old.json").write_text(json.dumps(old), encoding="utf-8")
+
+    export_order: list[str] = []
+
+    with patch("chatgpt2applenotes.sync.AppleNotesExporter") as mock_exporter_class:
+        mock_exporter = MagicMock()
+        mock_exporter_class.return_value = mock_exporter
+
+        def track_export(conversation: Any, **_kwargs: Any) -> None:
+            export_order.append(conversation.id)
+
+        mock_exporter.export.side_effect = track_export
+
+        sync_conversations(tmp_path, "TestFolder", dry_run=True)
+
+    # should be sorted by update_time ascending (oldest first)
+    assert export_order == ["conv-old", "conv-mid", "conv-new"]
