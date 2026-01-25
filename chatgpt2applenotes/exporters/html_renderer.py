@@ -81,7 +81,7 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
                 text = text.replace(matched_text, "")
                 continue
 
-            # build links from items
+            # build links from items and supporting_websites
             links = []
             for item in items:
                 url = item.get("url", "")
@@ -90,6 +90,15 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
                     escaped_url = html_lib.escape(url)
                     escaped_attr = html_lib.escape(attribution)
                     links.append(f'<a href="{escaped_url}">{escaped_attr}</a>')
+
+                # add supporting websites
+                for support in item.get("supporting_websites", []):
+                    s_url = support.get("url", "")
+                    s_attr = support.get("attribution", "")
+                    if s_url and s_attr:
+                        escaped_url = html_lib.escape(s_url)
+                        escaped_attr = html_lib.escape(s_attr)
+                        links.append(f'<a href="{escaped_url}">{escaped_attr}</a>')
 
             if links:
                 replacement = "(" + ", ".join(links) + ")"
