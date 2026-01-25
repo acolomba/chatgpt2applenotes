@@ -173,9 +173,6 @@ def sync_conversations(
         index = build_conversation_index(files)
         index.sort(key=lambda x: x[0])
 
-        handler.log_info(f"Found {len(index)} conversation(s) to process")
-        handler.set_total(len(index))
-
         exporter = AppleNotesExporter(
             target="notes",
             cc_dir=cc_dir,
@@ -184,7 +181,14 @@ def sync_conversations(
         )
 
         # single upfront scan of destination folder
-        note_index = exporter.scan_folder_notes(folder) if not dry_run else {}
+        if not dry_run:
+            handler.start_scanning()
+            note_index = exporter.scan_folder_notes(folder)
+        else:
+            note_index = {}
+
+        handler.log_info(f"Found {len(index)} conversation(s) to process")
+        handler.set_total(len(index))
 
         processed = 0
         failed = 0
