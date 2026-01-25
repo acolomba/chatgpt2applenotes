@@ -606,3 +606,77 @@ def test_removes_citation_marker_without_items(tmp_path: Path) -> None:
     assert "\ue200" not in html
     assert "turn0search0" not in html
     assert "<a href" not in html or "conv-123" in html  # only footer link ok
+
+
+def test_renders_citations_from_real_conversation_structure(tmp_path: Path) -> None:
+    """citations render correctly with real ChatGPT export structure."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": [
+                        "Enable in **System Settings**. \ue200cite\ue202turn0search3\ue201 "
+                        "Accuracy varies. \ue200cite\ue202turn1search2\ue202turn1search3\ue201"
+                    ],
+                },
+                metadata={
+                    "content_references": [
+                        {
+                            "matched_text": "\ue200cite\ue202turn0search3\ue201",
+                            "items": [
+                                {
+                                    "title": "How To Use Dictation",
+                                    "url": "https://macmost.com/dictation",
+                                    "attribution": "MacMost.com",
+                                }
+                            ],
+                        },
+                        {
+                            "matched_text": "\ue200cite\ue202turn1search2\ue202turn1search3\ue201",
+                            "items": [
+                                {
+                                    "title": "Dictation Tips",
+                                    "url": "https://intego.com/tips",
+                                    "attribution": "Intego",
+                                    "supporting_websites": [
+                                        {
+                                            "title": "Discussion",
+                                            "url": "https://reddit.com/r/mac",
+                                            "attribution": "Reddit",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ]
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # text preserved
+    assert "Enable in" in html
+    assert "System Settings" in html
+    assert "Accuracy varies." in html
+    # first citation
+    assert '<a href="https://macmost.com/dictation">MacMost.com</a>' in html
+    # second citation with supporting site
+    assert '<a href="https://intego.com/tips">Intego</a>' in html
+    assert '<a href="https://reddit.com/r/mac">Reddit</a>' in html
+    # no markers remain
+    assert "\ue200" not in html
+    assert "\ue201" not in html
+    assert "\ue202" not in html
