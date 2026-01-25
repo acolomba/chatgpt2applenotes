@@ -466,3 +466,48 @@ def test_full_conversation_with_all_features(tmp_path: Path) -> None:
     assert "<h2>You</h2>" in html
     assert "<h2>ChatGPT</h2>" in html
     assert "<h2>Plugin (dalle)</h2>" in html
+
+
+def test_renders_single_citation_as_link(tmp_path: Path) -> None:
+    """citation markers are replaced with attribution links."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["See the guide. \ue200cite\ue202turn0search3\ue201"],
+                },
+                metadata={
+                    "content_references": [
+                        {
+                            "matched_text": "\ue200cite\ue202turn0search3\ue201",
+                            "items": [
+                                {
+                                    "url": "https://example.com/guide",
+                                    "attribution": "Example.com",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "See the guide." in html
+    assert '<a href="https://example.com/guide">Example.com</a>' in html
+    # marker should be gone
+    assert "\ue200" not in html
+    assert "turn0search3" not in html
