@@ -72,7 +72,8 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
 
         for ref in content_refs:
             matched_text = ref.get("matched_text", "")
-            if not matched_text:
+            # skip empty or whitespace-only markers (some refs have " " as matched_text)
+            if not matched_text or matched_text.isspace():
                 continue
 
             items = ref.get("items", [])
