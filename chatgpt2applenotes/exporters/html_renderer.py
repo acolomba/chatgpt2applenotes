@@ -61,6 +61,44 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
 
         return False
 
+    def _render_citations(self, text: str, metadata: Optional[dict[str, Any]]) -> str:
+        """replaces citation markers with attribution links."""
+        if not metadata:
+            return text
+
+        content_refs = metadata.get("content_references", [])
+        if not content_refs:
+            return text
+
+        for ref in content_refs:
+            matched_text = ref.get("matched_text", "")
+            if not matched_text:
+                continue
+
+            items = ref.get("items", [])
+            if not items:
+                # no items, just remove the marker
+                text = text.replace(matched_text, "")
+                continue
+
+            # build links from items
+            links = []
+            for item in items:
+                url = item.get("url", "")
+                attribution = item.get("attribution", "")
+                if url and attribution:
+                    escaped_url = html_lib.escape(url)
+                    escaped_attr = html_lib.escape(attribution)
+                    links.append(f'<a href="{escaped_url}">{escaped_attr}</a>')
+
+            if links:
+                replacement = "(" + ", ".join(links) + ")"
+                text = text.replace(matched_text, replacement)
+            else:
+                text = text.replace(matched_text, "")
+
+        return text
+
     def _add_block_spacing(self, html: str) -> str:
         """adds <div><br></div> between adjacent block elements at top level."""
         # first, clean up empty divs from markdown-it's loose list rendering
@@ -209,7 +247,8 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
         parts = message.content.get("parts") or []
         text = "\n".join(str(p) for p in parts if p)
         text = FOOTNOTE_PATTERN.sub("", text)  # removes citation marks
-        return self._markdown_to_apple_notes(text)
+        html = self._markdown_to_apple_notes(text)
+        return self._render_citations(html, message.metadata)  # render citations
 
     def _render_code_content(self, message: Message) -> str:
         """renders code content type as monospace block."""
