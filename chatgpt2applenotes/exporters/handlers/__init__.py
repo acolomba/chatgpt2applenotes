@@ -9,6 +9,7 @@ class RenderContext:
     """context passed to handlers during rendering."""
 
     render_internals: bool = False
+    render_unknown: bool = False
 
 
 class ContentHandler(Protocol):  # pylint: disable=too-few-public-methods

@@ -75,6 +75,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="render internal content (thoughts, reasoning, user/model context)",
     )
+    parser.add_argument(
+        "--render-unknown",
+        action="store_true",
+        help="render unknown content types (shows the content type name)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -105,6 +110,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             quiet=args.quiet,
             progress=args.progress,
             render_internals=args.render_internals,
+            render_unknown=args.render_unknown,
         )
     except Exception as e:
         logger.error("Fatal error: %s", e)

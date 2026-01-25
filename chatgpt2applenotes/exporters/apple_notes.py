@@ -24,6 +24,7 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
         target: Literal["file", "notes"] = "file",
         cc_dir: Optional[Path] = None,
         render_internals: bool = False,
+        render_unknown: bool = False,
     ) -> None:
         """
         Initialize Apple Notes exporter.
@@ -32,10 +33,13 @@ class AppleNotesExporter(Exporter):  # pylint: disable=too-few-public-methods
             target: export target - "file" for HTML files, "notes" for direct integration
             cc_dir: optional directory to save copies of generated HTML
             render_internals: if True, render internal content (thoughts, etc.)
+            render_unknown: if True, render unknown content types with their type name
         """
         self.target = target
         self.cc_dir = cc_dir
-        self._renderer = AppleNotesRenderer(render_internals=render_internals)
+        self._renderer = AppleNotesRenderer(
+            render_internals=render_internals, render_unknown=render_unknown
+        )
 
     def export(
         self,

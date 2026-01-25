@@ -28,14 +28,18 @@ from chatgpt2applenotes.exporters.handlers.parts import audio  # noqa: F401
 class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
     """renders conversations to Apple Notes-compatible HTML."""
 
-    def __init__(self, render_internals: bool = False) -> None:
+    def __init__(
+        self, render_internals: bool = False, render_unknown: bool = False
+    ) -> None:
         """
         initializes renderer.
 
         Args:
             render_internals: if True, renders internal content types (thoughts, etc.)
+            render_unknown: if True, renders unknown content types with their type name
         """
         self.render_internals = render_internals
+        self.render_unknown = render_unknown
 
     def _get_author_label(self, message: Message) -> str:
         """returns friendly author label: 'You', 'ChatGPT', or 'Plugin (name)'."""
@@ -105,7 +109,10 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
         if content_type == "multimodal_text":
             return self._render_user_multimodal_content(message.content)
 
-        return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
+        # unknown content type - hide by default
+        if self.render_unknown:
+            return f"<div><i>[Unknown: {html_lib.escape(content_type)}]</i></div>"
+        return ""
 
     def _render_message_content(self, message: Message) -> str:
         """renders message content to Apple Notes HTML."""
@@ -114,14 +121,20 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
             return self._render_user_content(message)
 
         # uses handler registry for assistant/tool messages
-        ctx = RenderContext(render_internals=self.render_internals)
+        ctx = RenderContext(
+            render_internals=self.render_internals,
+            render_unknown=self.render_unknown,
+        )
         rendered = registry.render(message.content, message.metadata, ctx)
 
         if rendered is not None:
             return rendered
 
-        # fallback for unhandled content types
-        return "[Unsupported content type]"
+        # unknown content type - hide by default
+        if self.render_unknown:
+            content_type = message.content.get("content_type", "unknown")
+            return f"<div><i>[Unknown: {html_lib.escape(content_type)}]</i></div>"
+        return ""
 
     def render_conversation(
         self, conversation: Conversation, wrap_html: bool = False

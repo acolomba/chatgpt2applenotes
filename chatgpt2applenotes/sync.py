@@ -141,6 +141,7 @@ def sync_conversations(
     quiet: bool = False,
     progress: bool = False,
     render_internals: bool = False,
+    render_unknown: bool = False,
 ) -> int:
     """
     syncs conversations from source to Apple Notes.
@@ -155,6 +156,7 @@ def sync_conversations(
         quiet: if True, suppress non-error output
         progress: if True, show progress bar
         render_internals: if True, render internal content (thoughts, etc.)
+        render_unknown: if True, render unknown content types with their name
 
     Returns:
         exit code (0 success, 1 partial failure, 2 fatal error)
@@ -175,7 +177,10 @@ def sync_conversations(
         handler.set_total(len(index))
 
         exporter = AppleNotesExporter(
-            target="notes", cc_dir=cc_dir, render_internals=render_internals
+            target="notes",
+            cc_dir=cc_dir,
+            render_internals=render_internals,
+            render_unknown=render_unknown,
         )
 
         # single upfront scan of destination folder
