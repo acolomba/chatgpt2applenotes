@@ -511,3 +511,58 @@ def test_renders_single_citation_as_link(tmp_path: Path) -> None:
     # marker should be gone
     assert "\ue200" not in html
     assert "turn0search3" not in html
+
+
+def test_renders_multi_citation_as_comma_separated_links(tmp_path: Path) -> None:
+    """multi-source citations render as comma-separated links."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": [
+                        "It needs cleanup. \ue200cite\ue202turn1search2\ue202turn1search3\ue201"
+                    ],
+                },
+                metadata={
+                    "content_references": [
+                        {
+                            "matched_text": "\ue200cite\ue202turn1search2\ue202turn1search3\ue201",
+                            "items": [
+                                {
+                                    "url": "https://intego.com/article",
+                                    "attribution": "Intego",
+                                    "supporting_websites": [
+                                        {
+                                            "url": "https://reddit.com/r/mac",
+                                            "attribution": "Reddit",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "It needs cleanup." in html
+    assert '<a href="https://intego.com/article">Intego</a>' in html
+    assert '<a href="https://reddit.com/r/mac">Reddit</a>' in html
+    # should be comma-separated
+    assert "Intego</a>, <a" in html
+    # marker should be gone
+    assert "\ue200" not in html
