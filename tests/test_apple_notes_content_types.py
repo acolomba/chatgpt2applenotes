@@ -680,3 +680,41 @@ def test_renders_citations_from_real_conversation_structure(tmp_path: Path) -> N
     assert "\ue200" not in html
     assert "\ue201" not in html
     assert "\ue202" not in html
+
+
+def test_whitespace_only_citation_marker_preserves_spaces(tmp_path: Path) -> None:
+    """whitespace-only matched_text in content_references does not strip spaces."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["Hello world. This has spaces."],
+                },
+                metadata={
+                    "content_references": [
+                        {
+                            "matched_text": " ",  # whitespace-only marker
+                            "items": [],
+                        }
+                    ]
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    # spaces must be preserved
+    assert "Hello world" in html
+    assert "This has spaces" in html
