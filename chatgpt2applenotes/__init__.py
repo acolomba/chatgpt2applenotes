@@ -70,6 +70,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="suppress all non-error output",
     )
+    parser.add_argument(
+        "--render-internals",
+        action="store_true",
+        help="render internal content (thoughts, reasoning, user/model context)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -99,6 +104,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             cc_dir=cc_dir,
             quiet=args.quiet,
             progress=args.progress,
+            render_internals=args.render_internals,
         )
     except Exception as e:
         logger.error("Fatal error: %s", e)
