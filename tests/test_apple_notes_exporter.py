@@ -335,7 +335,7 @@ def test_renders_code_blocks_with_special_chars_in_language(tmp_path: Path) -> N
 
 
 def test_renders_lists(tmp_path: Path) -> None:
-    """Lists are rendered as ul/ol with li items."""
+    """lists are rendered as div elements with bullet/number markers."""
     conversation = Conversation(
         id="conv-123",
         title="Test",
@@ -359,14 +359,12 @@ def test_renders_lists(tmp_path: Path) -> None:
     exporter.export(conversation, str(output_dir))
 
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
-    assert "<ul>" in html
-    assert "<li>Item 1</li>" in html
-    assert "<li>Item 2</li>" in html
-    assert "</ul>" in html
-    assert "<ol>" in html
-    assert "<li>First</li>" in html
-    assert "<li>Second</li>" in html
-    assert "</ol>" in html
+    # unordered list items use bullet character
+    assert "<div>•\tItem 1</div>" in html
+    assert "<div>•\tItem 2</div>" in html
+    # ordered list items use numbers
+    assert "<div>1.\tFirst</div>" in html
+    assert "<div>2.\tSecond</div>" in html
 
 
 def test_renders_multimodal_content_with_images(tmp_path: Path) -> None:

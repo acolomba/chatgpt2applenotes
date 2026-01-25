@@ -158,22 +158,40 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
         renderer: Any = md.renderer
         original_render_token = renderer.renderToken
 
+        # tracks list state for numbered lists
+        list_state: list[tuple[str, int]] = []  # stack of (type, counter)
+
+        def _handle_list_token(tag: str, nesting: int) -> str:
+            """handles ul/ol/li tokens for Apple Notes list rendering."""
+            if tag in ("ul", "ol"):
+                if nesting == 1:
+                    list_state.append((tag, 0))
+                elif list_state:
+                    list_state.pop()
+                return ""
+            # li tag
+            if nesting != 1:  # closing
+                return "</div>\n"
+            # opening li - check if ordered list
+            if list_state and list_state[-1][0] == "ol":
+                list_type, counter = list_state[-1]
+                list_state[-1] = (list_type, counter + 1)
+                return f"<div>{counter + 1}.\t"
+            return "<div>•\t"
+
         def custom_render_token(tokens: Any, idx: int, options: Any, env: Any) -> str:
             """custom token renderer that transforms tags to Apple Notes format."""
             token = tokens[idx]
 
-            # paragraph: p -> div
-            if token.tag == "p":
-                token.tag = "div"
-            # bold: strong -> b
-            elif token.tag == "strong":
-                token.tag = "b"
-            # italic: em -> i
-            elif token.tag == "em":
-                token.tag = "i"
-            # inline code: code -> tt
-            elif token.tag == "code":
-                token.tag = "tt"
+            # lists: convert ul/ol/li to div with bullet/number markers
+            # this fixes wrapping issues in Apple Notes with native list rendering
+            if token.tag in ("ul", "ol", "li"):
+                return _handle_list_token(token.tag, token.nesting)
+
+            # tag transformations for Apple Notes compatibility
+            tag_map = {"p": "div", "strong": "b", "em": "i", "code": "tt"}
+            if token.tag in tag_map:
+                token.tag = tag_map[token.tag]
 
             return cast(str, original_render_token(tokens, idx, options, env))
 
