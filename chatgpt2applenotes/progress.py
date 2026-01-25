@@ -43,7 +43,8 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
             return
 
         self._progress = Progress(
-            "[progress.description]{task.description}",
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
             console=self._console,
             transient=True,
         )
@@ -62,7 +63,8 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
             self._progress.stop()
 
         self._progress = Progress(
-            "[progress.description]{task.description}",
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
             console=self._console,
             transient=True,
         )
