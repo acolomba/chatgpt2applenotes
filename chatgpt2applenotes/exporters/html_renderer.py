@@ -2,37 +2,40 @@
 
 import html as html_lib
 import re
-from typing import Any, Callable, Optional, cast
-
-from markdown_it import MarkdownIt
+from typing import Any, Optional
 
 from chatgpt2applenotes.core.models import Conversation, Message
 
-LATEX_PATTERN = re.compile(
-    r"(\$\$[\s\S]+?\$\$)|(\$[^\$\n]+?\$)|(\\\[[\s\S]+?\\\])|(\\\([\s\S]+?\\\))",
-    re.MULTILINE,
+# imports trigger handler registration
+# pylint: disable=unused-import
+from chatgpt2applenotes.exporters.handlers import (  # noqa: F401
+    RenderContext,
+    app_context,
+    browsing,
+    code,
+    errors,
+    execution,
+    internals,
+    multimodal,
+    registry,
+    text,
 )
-FOOTNOTE_PATTERN = re.compile(r"【\d+†\([^)]+\)】")
+from chatgpt2applenotes.exporters.handlers.parts import audio  # noqa: F401
+
+# pylint: enable=unused-import
 
 
 class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
     """renders conversations to Apple Notes-compatible HTML."""
 
-    def _protect_latex(self, text: str) -> tuple[str, list[str]]:
-        """replaces LaTeX with placeholders to protect from markdown processing."""
-        matches: list[str] = []
+    def __init__(self, render_internals: bool = False) -> None:
+        """
+        initializes renderer.
 
-        def replacer(match: re.Match[str]) -> str:
-            matches.append(match.group(0))
-            return f"\u2563{len(matches) - 1}\u2563"
-
-        return LATEX_PATTERN.sub(replacer, text), matches
-
-    def _restore_latex(self, text: str, matches: list[str]) -> str:
-        """restores LaTeX from placeholders."""
-        for i, latex in enumerate(matches):
-            text = text.replace(f"\u2563{i}\u2563", html_lib.escape(latex))
-        return text
+        Args:
+            render_internals: if True, renders internal content types (thoughts, etc.)
+        """
+        self.render_internals = render_internals
 
     def _get_author_label(self, message: Message) -> str:
         """returns friendly author label: 'You', 'ChatGPT', or 'Plugin (name)'."""
@@ -61,182 +64,16 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
 
         return False
 
-    def _render_citations(self, text: str, metadata: Optional[dict[str, Any]]) -> str:
-        """replaces citation markers with attribution links."""
-        if not metadata:
-            return text
-
-        content_refs = metadata.get("content_references", [])
-        if not content_refs:
-            return text
-
-        for ref in content_refs:
-            matched_text = ref.get("matched_text", "")
-            # skip empty or whitespace-only markers (some refs have " " as matched_text)
-            if not matched_text or matched_text.isspace():
-                continue
-
-            items = ref.get("items", [])
-            if not items:
-                # no items, just remove the marker
-                text = text.replace(matched_text, "")
-                continue
-
-            # build links from items and supporting_websites
-            links = []
-            for item in items:
-                url = item.get("url", "")
-                attribution = item.get("attribution", "")
-                if url and attribution:
-                    escaped_url = html_lib.escape(url)
-                    escaped_attr = html_lib.escape(attribution)
-                    links.append(f'<a href="{escaped_url}">{escaped_attr}</a>')
-
-                # add supporting websites
-                for support in item.get("supporting_websites", []):
-                    s_url = support.get("url", "")
-                    s_attr = support.get("attribution", "")
-                    if s_url and s_attr:
-                        escaped_url = html_lib.escape(s_url)
-                        escaped_attr = html_lib.escape(s_attr)
-                        links.append(f'<a href="{escaped_url}">{escaped_attr}</a>')
-
-            if links:
-                replacement = "(" + ", ".join(links) + ")"
-                text = text.replace(matched_text, replacement)
-            else:
-                text = text.replace(matched_text, "")
-
-        return text
-
-    def _add_block_spacing(self, html: str) -> str:
-        """adds <div><br></div> between adjacent block elements at top level."""
-        # first, clean up empty divs from markdown-it's loose list rendering
-        # pattern: <li> or <blockquote> followed by empty <div></div> or <div><br></div>
-        html = re.sub(
-            r"(<(?:li|blockquote)[^>]*>)\s*<div>(?:<br\s*/?>|\s)*</div>\s*",
-            r"\1\n",
-            html,
-            flags=re.IGNORECASE,
-        )
-
-        # use a unique marker to prevent infinite loops
-        spacer_marker = "\x00SPACER\x00"
-
-        # block element patterns (closing tag followed by opening tag)
-        block_pattern = re.compile(
-            r"(</(?:div|ul|ol|blockquote|pre|table|h[1-6])>)"
-            r"(\s*)"
-            r"(<(?:div|ul|ol|blockquote|pre|table|h[1-6])(?:\s|>))",
-            re.IGNORECASE,
-        )
-
-        def add_spacer(match: re.Match[str]) -> str:
-            return f"{match.group(1)}\n{spacer_marker}\n{match.group(3)}"
-
-        # repeatedly apply until no more changes (handles consecutive blocks)
-        prev = ""
-        while prev != html:
-            prev = html
-            html = block_pattern.sub(add_spacer, html)
-
-        # replace markers with actual spacers
-        return html.replace(spacer_marker, "<div><br></div>")
-
-    def _markdown_to_apple_notes(self, markdown: str) -> str:
-        """converts markdown to Apple Notes HTML format."""
-        protected_text, latex_matches = self._protect_latex(markdown)
-        md = MarkdownIt()
-        # enables table support
-        md.enable("table")
-        # disables HTML to prevent injection attacks
-        md.disable("html_inline")
-        md.disable("html_block")
-
-        # customizes renderer to use Apple Notes tags
-        # cast to Any for mypy since RendererProtocol doesn't expose renderToken/rules
-        renderer: Any = md.renderer
-        original_render_token = renderer.renderToken
-
-        # tracks list state for numbered lists
-        list_state: list[tuple[str, int]] = []  # stack of (type, counter)
-
-        def _handle_list_token(tag: str, nesting: int) -> str:
-            """handles ul/ol/li tokens for Apple Notes list rendering."""
-            if tag in ("ul", "ol"):
-                if nesting == 1:
-                    list_state.append((tag, 0))
-                elif list_state:
-                    list_state.pop()
-                return ""
-            # li tag
-            if nesting != 1:  # closing
-                return "</div>\n"
-            # opening li - check if ordered list
-            if list_state and list_state[-1][0] == "ol":
-                list_type, counter = list_state[-1]
-                list_state[-1] = (list_type, counter + 1)
-                return f"<div>{counter + 1}.\t"
-            return "<div>•\t"
-
-        def custom_render_token(tokens: Any, idx: int, options: Any, env: Any) -> str:
-            """custom token renderer that transforms tags to Apple Notes format."""
-            token = tokens[idx]
-
-            # lists: convert ul/ol/li to div with bullet/number markers
-            # this fixes wrapping issues in Apple Notes with native list rendering
-            if token.tag in ("ul", "ol", "li"):
-                return _handle_list_token(token.tag, token.nesting)
-
-            # tag transformations for Apple Notes compatibility
-            tag_map = {"p": "div", "strong": "b", "em": "i", "code": "tt"}
-            if token.tag in tag_map:
-                token.tag = tag_map[token.tag]
-
-            return cast(str, original_render_token(tokens, idx, options, env))
-
-        renderer.renderToken = custom_render_token
-
-        # custom code block renderer: uses <pre> to preserve whitespace
-        def render_code_block(tokens: Any, idx: int, _options: Any, _env: Any) -> str:
-            token = tokens[idx]
-            escaped = html_lib.escape(token.content)
-            return f"<pre>{escaped}</pre>\n"
-
-        renderer.rules["code_block"] = render_code_block
-        renderer.rules["fence"] = render_code_block
-
-        # custom image renderer: render images as inline img tags for Apple Notes
-        def render_image(tokens: Any, idx: int, _options: Any, _env: Any) -> str:
-            token = tokens[idx]
-            src = token.attrGet("src") or ""
-            # renders as div with img tag, using inline styles for Apple Notes
-            escaped_src = html_lib.escape(src)
-            return f'<div><img src="{escaped_src}" style="max-width: 100%; max-height: 100%;"></div>\n'
-
-        renderer.rules["image"] = render_image
-
-        result = cast(str, md.render(protected_text))
-        result = self._restore_latex(result, latex_matches) if latex_matches else result
-
-        # post-process: add spacing between top-level block elements
-        return self._add_block_spacing(result)
-
-    def _render_multimodal_content(
-        self, content: dict[str, Any], escape_text: bool = False
-    ) -> str:
-        """renders multimodal content (text + images) to HTML."""
+    def _render_user_multimodal_content(self, content: dict[str, Any]) -> str:
+        """renders user multimodal content (text + audio transcriptions) with HTML escaping."""
         parts = content.get("parts") or []
         html_parts = []
 
         for part in parts:
             if isinstance(part, str):
-                if escape_text:
-                    escaped = html_lib.escape(part)
-                    lines = escaped.split("\n")
-                    html_parts.append("<div>" + "</div>\n<div>".join(lines) + "</div>")
-                else:
-                    html_parts.append(self._markdown_to_apple_notes(part))
+                escaped = html_lib.escape(part)
+                lines = escaped.split("\n")
+                html_parts.append("<div>" + "</div>\n<div>".join(lines) + "</div>")
             elif (
                 isinstance(part, dict)
                 and part.get("content_type") == "audio_transcription"
@@ -260,78 +97,15 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
 
         if content_type == "text":
             parts = message.content.get("parts") or []
-            text = "\n".join(str(p) for p in parts if p)
-            escaped = html_lib.escape(text)
+            joined = "\n".join(str(p) for p in parts if p)
+            escaped = html_lib.escape(joined)
             lines = escaped.split("\n")
             return "<div>" + "</div>\n<div>".join(lines) + "</div>"
 
         if content_type == "multimodal_text":
-            return self._render_multimodal_content(message.content, escape_text=True)
+            return self._render_user_multimodal_content(message.content)
 
         return f"<div>{html_lib.escape('[Unsupported content type]')}</div>"
-
-    def _render_text_content(self, message: Message) -> str:
-        """renders text content type as markdown."""
-        parts = message.content.get("parts") or []
-        text = "\n".join(str(p) for p in parts if p)
-        text = FOOTNOTE_PATTERN.sub("", text)  # removes citation marks
-        html = self._markdown_to_apple_notes(text)
-        return self._render_citations(html, message.metadata)  # render citations
-
-    def _render_code_content(self, message: Message) -> str:
-        """renders code content type as monospace block."""
-        text = message.content.get("text", "")
-        escaped = html_lib.escape(text)
-        return f"<pre>{escaped}</pre>"
-
-    def _render_execution_output(self, message: Message) -> str:
-        """renders execution_output content type (images from aggregate_result or text)."""
-        metadata = message.metadata or {}
-        aggregate_result = metadata.get("aggregate_result", {})
-        messages = aggregate_result.get("messages", [])
-        image_messages = [m for m in messages if m.get("message_type") == "image"]
-
-        if image_messages:
-            parts = []
-            for img in image_messages:
-                url = img.get("image_url", "")
-                escaped_url = html_lib.escape(url)
-                parts.append(
-                    f'<div><img src="{escaped_url}" style="max-width: 100%;"></div>'
-                )
-            return "\n".join(parts)
-
-        text = message.content.get("text", "")
-        escaped = html_lib.escape(text)
-        return f"<div><tt>Result:\n{escaped}</tt></div>"
-
-    def _render_tether_quote(self, message: Message) -> str:
-        """renders tether_quote content type (quotes/citations from web browsing)."""
-        title = message.content.get("title", "")
-        text = message.content.get("text", "")
-        quote_text = title or text or ""
-        escaped = html_lib.escape(quote_text)
-        return f"<blockquote>{escaped}</blockquote>"
-
-    def _render_tether_browsing_display(self, message: Message) -> str:
-        """renders tether_browsing_display content type (browsing results with links)."""
-        metadata = message.metadata or {}
-        cite_metadata = metadata.get("_cite_metadata", {})
-        metadata_list = cite_metadata.get("metadata_list", [])
-
-        if not metadata_list:
-            return ""
-
-        parts = []
-        for item in metadata_list:
-            title = item.get("title", "")
-            url = item.get("url", "")
-            escaped_title = html_lib.escape(title)
-            escaped_url = html_lib.escape(url)
-            parts.append(
-                f'<blockquote><a href="{escaped_url}">{escaped_title}</a></blockquote>'
-            )
-        return "\n".join(parts)
 
     def _render_message_content(self, message: Message) -> str:
         """renders message content to Apple Notes HTML."""
@@ -339,22 +113,15 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
         if message.author.role == "user":
             return self._render_user_content(message)
 
-        content_type = message.content.get("content_type", "text")
+        # uses handler registry for assistant/tool messages
+        ctx = RenderContext(render_internals=self.render_internals)
+        rendered = registry.render(message.content, message.metadata, ctx)
 
-        # dispatch table for assistant/tool messages
-        renderers: dict[str, Callable[[], str]] = {
-            "text": lambda: self._render_text_content(message),
-            "multimodal_text": lambda: self._render_multimodal_content(message.content),
-            "code": lambda: self._render_code_content(message),
-            "execution_output": lambda: self._render_execution_output(message),
-            "tether_quote": lambda: self._render_tether_quote(message),
-            "tether_browsing_display": lambda: self._render_tether_browsing_display(
-                message
-            ),
-        }
+        if rendered is not None:
+            return rendered
 
-        renderer = renderers.get(content_type)
-        return renderer() if renderer else "[Unsupported content type]"
+        # fallback for unhandled content types
+        return "[Unsupported content type]"
 
     def render_conversation(
         self, conversation: Conversation, wrap_html: bool = False
