@@ -61,6 +61,54 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
 
         return False
 
+    def _render_citations(self, text: str, metadata: Optional[dict[str, Any]]) -> str:
+        """replaces citation markers with attribution links."""
+        if not metadata:
+            return text
+
+        content_refs = metadata.get("content_references", [])
+        if not content_refs:
+            return text
+
+        for ref in content_refs:
+            matched_text = ref.get("matched_text", "")
+            # skip empty or whitespace-only markers (some refs have " " as matched_text)
+            if not matched_text or matched_text.isspace():
+                continue
+
+            items = ref.get("items", [])
+            if not items:
+                # no items, just remove the marker
+                text = text.replace(matched_text, "")
+                continue
+
+            # build links from items and supporting_websites
+            links = []
+            for item in items:
+                url = item.get("url", "")
+                attribution = item.get("attribution", "")
+                if url and attribution:
+                    escaped_url = html_lib.escape(url)
+                    escaped_attr = html_lib.escape(attribution)
+                    links.append(f'<a href="{escaped_url}">{escaped_attr}</a>')
+
+                # add supporting websites
+                for support in item.get("supporting_websites", []):
+                    s_url = support.get("url", "")
+                    s_attr = support.get("attribution", "")
+                    if s_url and s_attr:
+                        escaped_url = html_lib.escape(s_url)
+                        escaped_attr = html_lib.escape(s_attr)
+                        links.append(f'<a href="{escaped_url}">{escaped_attr}</a>')
+
+            if links:
+                replacement = "(" + ", ".join(links) + ")"
+                text = text.replace(matched_text, replacement)
+            else:
+                text = text.replace(matched_text, "")
+
+        return text
+
     def _add_block_spacing(self, html: str) -> str:
         """adds <div><br></div> between adjacent block elements at top level."""
         # first, clean up empty divs from markdown-it's loose list rendering
@@ -110,22 +158,40 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
         renderer: Any = md.renderer
         original_render_token = renderer.renderToken
 
+        # tracks list state for numbered lists
+        list_state: list[tuple[str, int]] = []  # stack of (type, counter)
+
+        def _handle_list_token(tag: str, nesting: int) -> str:
+            """handles ul/ol/li tokens for Apple Notes list rendering."""
+            if tag in ("ul", "ol"):
+                if nesting == 1:
+                    list_state.append((tag, 0))
+                elif list_state:
+                    list_state.pop()
+                return ""
+            # li tag
+            if nesting != 1:  # closing
+                return "</div>\n"
+            # opening li - check if ordered list
+            if list_state and list_state[-1][0] == "ol":
+                list_type, counter = list_state[-1]
+                list_state[-1] = (list_type, counter + 1)
+                return f"<div>{counter + 1}.\t"
+            return "<div>•\t"
+
         def custom_render_token(tokens: Any, idx: int, options: Any, env: Any) -> str:
             """custom token renderer that transforms tags to Apple Notes format."""
             token = tokens[idx]
 
-            # paragraph: p -> div
-            if token.tag == "p":
-                token.tag = "div"
-            # bold: strong -> b
-            elif token.tag == "strong":
-                token.tag = "b"
-            # italic: em -> i
-            elif token.tag == "em":
-                token.tag = "i"
-            # inline code: code -> tt
-            elif token.tag == "code":
-                token.tag = "tt"
+            # lists: convert ul/ol/li to div with bullet/number markers
+            # this fixes wrapping issues in Apple Notes with native list rendering
+            if token.tag in ("ul", "ol", "li"):
+                return _handle_list_token(token.tag, token.nesting)
+
+            # tag transformations for Apple Notes compatibility
+            tag_map = {"p": "div", "strong": "b", "em": "i", "code": "tt"}
+            if token.tag in tag_map:
+                token.tag = tag_map[token.tag]
 
             return cast(str, original_render_token(tokens, idx, options, env))
 
@@ -209,7 +275,8 @@ class AppleNotesRenderer:  # pylint: disable=too-few-public-methods
         parts = message.content.get("parts") or []
         text = "\n".join(str(p) for p in parts if p)
         text = FOOTNOTE_PATTERN.sub("", text)  # removes citation marks
-        return self._markdown_to_apple_notes(text)
+        html = self._markdown_to_apple_notes(text)
+        return self._render_citations(html, message.metadata)  # render citations
 
     def _render_code_content(self, message: Message) -> str:
         """renders code content type as monospace block."""
