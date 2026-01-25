@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -112,6 +113,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             render_internals=args.render_internals,
             render_unknown=args.render_unknown,
         )
+    except KeyboardInterrupt:
+        print("\nInterrupted", file=sys.stderr)
+        return 130
     except Exception as e:
         logger.error("Fatal error: %s", e)
         return 2
