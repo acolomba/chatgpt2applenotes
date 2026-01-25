@@ -566,3 +566,43 @@ def test_renders_multi_citation_as_comma_separated_links(tmp_path: Path) -> None
     assert "Intego</a>, <a" in html
     # marker should be gone
     assert "\ue200" not in html
+
+
+def test_removes_citation_marker_without_items(tmp_path: Path) -> None:
+    """citation markers without items are removed cleanly."""
+    conversation = Conversation(
+        id="conv-123",
+        title="Test",
+        create_time=1234567890.0,
+        update_time=1234567900.0,
+        messages=[
+            Message(
+                id="msg-1",
+                author=Author(role="assistant"),
+                create_time=1234567890.0,
+                content={
+                    "content_type": "text",
+                    "parts": ["No source here. \ue200cite\ue202turn0search0\ue201"],
+                },
+                metadata={
+                    "content_references": [
+                        {
+                            "matched_text": "\ue200cite\ue202turn0search0\ue201",
+                            "items": [],
+                        }
+                    ]
+                },
+            )
+        ],
+    )
+
+    exporter = AppleNotesExporter(target="file")
+    output_dir = tmp_path / "notes"
+    exporter.export(conversation, str(output_dir))
+
+    html = (output_dir / "Test.html").read_text(encoding="utf-8")
+    assert "No source here." in html
+    # marker should be removed, no link added
+    assert "\ue200" not in html
+    assert "turn0search0" not in html
+    assert "<a href" not in html or "conv-123" in html  # only footer link ok
