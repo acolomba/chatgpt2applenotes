@@ -43,13 +43,34 @@ class ProgressHandler:  # pylint: disable=too-few-public-methods
             return
 
         self._progress = Progress(
-            "[progress.description]{task.description}",
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
             console=self._console,
             transient=True,
         )
         self._progress.start()
         self._task_id = self._progress.add_task(
             "Discovering conversations...", total=None
+        )
+
+    def start_scanning(self) -> None:
+        """starts spinner for note scanning phase."""
+        if not self.show_progress:
+            return
+
+        # stops discovery spinner if running
+        if self._progress is not None:
+            self._progress.stop()
+
+        self._progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=self._console,
+            transient=True,
+        )
+        self._progress.start()
+        self._task_id = self._progress.add_task(
+            "Scanning existing notes...", total=None
         )
 
     def set_total(self, total: int) -> None:

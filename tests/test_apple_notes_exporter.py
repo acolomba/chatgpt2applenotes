@@ -231,8 +231,8 @@ def test_renders_markdown_in_messages(tmp_path: Path) -> None:
     html = (output_dir / "Test.html").read_text(encoding="utf-8")
     assert "<b>bold</b>" in html
     assert "<i>italic</i>" in html
-    # inline code uses <code> tag (markdown-it default, transformed to <tt> only in code blocks)
-    assert "<code>code</code>" in html
+    # inline code uses <tt> tag for Apple Notes compatibility
+    assert "<tt>code</tt>" in html
 
 
 def test_renders_code_blocks(tmp_path: Path) -> None:

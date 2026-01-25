@@ -140,6 +140,8 @@ def sync_conversations(
     cc_dir: Optional[Path] = None,
     quiet: bool = False,
     progress: bool = False,
+    render_internals: bool = False,
+    render_unknown: bool = False,
 ) -> int:
     """
     syncs conversations from source to Apple Notes.
@@ -153,6 +155,8 @@ def sync_conversations(
         cc_dir: optional directory to save copies of generated HTML
         quiet: if True, suppress non-error output
         progress: if True, show progress bar
+        render_internals: if True, render internal content (thoughts, etc.)
+        render_unknown: if True, render unknown content types with their name
 
     Returns:
         exit code (0 success, 1 partial failure, 2 fatal error)
@@ -169,13 +173,22 @@ def sync_conversations(
         index = build_conversation_index(files)
         index.sort(key=lambda x: x[0])
 
-        handler.log_info(f"Found {len(index)} conversation(s) to process")
-        handler.set_total(len(index))
-
-        exporter = AppleNotesExporter(target="notes", cc_dir=cc_dir)
+        exporter = AppleNotesExporter(
+            target="notes",
+            cc_dir=cc_dir,
+            render_internals=render_internals,
+            render_unknown=render_unknown,
+        )
 
         # single upfront scan of destination folder
-        note_index = exporter.scan_folder_notes(folder) if not dry_run else {}
+        if not dry_run:
+            handler.start_scanning()
+            note_index = exporter.scan_folder_notes(folder)
+        else:
+            note_index = {}
+
+        handler.log_info(f"Found {len(index)} conversation(s) to process")
+        handler.set_total(len(index))
 
         processed = 0
         failed = 0
